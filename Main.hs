@@ -1,143 +1,187 @@
 module Main where
 
 import Parser
-import Control.Applicative
-import Data.Char
 
-import System.Environment
+import Control.DeepSeq
 import qualified Data.Map.Strict as Map
-
-data Atom = Number Int | Identifier String | StringLiteral String | List [Atom] | Quote Atom
-  deriving (Show, Eq)
-
-integer :: Parser Atom
-integer = Number . read <$> spansP isDigit
-
-identifier :: Parser Atom
-identifier = Identifier <$> (spansP $
-  \c -> any ($ c) [isAlpha, isNumber, isPunctuation, isSymbol]
-    && c /= '(' && c /= ')' && c /= '\'' && c /= '"' && c /= ';')
-
-stringliteral :: Parser Atom
-stringliteral = StringLiteral <$>
-  (charP '"' *> spanmP (/= '"') <* charP '"')
-
-wsm :: Parser String
-wsm = spanmP isSpace
-
-wss :: Parser String
-wss = spansP isSpace
-
-list :: Parser Atom
-list = List <$> (charP '(' *> wsm *> body <* wsm <* charP ')')
-  where body = (:) <$> atom <*> many (wss *> atom) <|> pure []
-
-quote :: Parser Atom
-quote = Quote <$> (charP '\'' *> atom)
-
-comment :: Parser Atom
-comment = charP ';' *> spanmP (/= '\n') *> wss *> atom
-
-atom :: Parser Atom
-atom = integer <|> identifier <|> stringliteral <|> list <|> quote <|> comment
-
-file :: Parser [Atom]
-file = many $ wsm *> atom
+import System.Environment
+import System.IO
+import System.IO.Unsafe
 
 type Scope = Map.Map String RuntimeValue
-data RuntimeValue = Number' Int | String' String | List' [RuntimeValue] | IOAction' RuntimeValue | Lambda' [String] Atom | Nil deriving (Eq)
+
+data RuntimeValue
+  = Number' Int
+  | Char' Char
+  | List' [RuntimeValue]
+  | Lambda' [String] Atom
+  | Nil'
+  | Intrinsic'
+      (Scope -> [RuntimeValue] -> (Scope, RuntimeValue))
+
+instance NFData RuntimeValue where
+  rnf x = seq x ()
+
+instance Eq RuntimeValue where
+  (Number' a) == (Number' b) = a == b
+  (List' a) == (List' b) = a == b
+  (Lambda' _ _) == (Lambda' _ _) = False
+  (Intrinsic' _) == (Intrinsic' _) = False
+  (Char' a) == (Char' b) = a == b
+  Nil' == Nil' = True
+  _ == _ = False
+
 instance Show RuntimeValue where
-  show (Number'   a) = show a
-  show (String'   a) = a
-  show (List'     a) = "("
-    ++ (show . head $ a)
-    ++ (foldl (\a e -> a ++ " " ++ show e) "" $ tail a)
-    ++ ")"
-  show (IOAction' a) = show a
-  show Nil           = "Nil" 
+  show (Number' a) = show a
+  show (List' s@(Char' _:_)) = map (\(Char' c) -> c) s
+  show (List' []) = "()"
+  show (List' a) =
+    "(" ++
+    (show . head $ a) ++
+    (foldl (\a e -> a ++ " " ++ show e) "" $ tail a) ++ ")"
+  show Nil' = "Nil"
   show (Lambda' _ _) = "Lambda"
+  show (Intrinsic' _) = "Intrinsic"
+  show (Char' c) = [c]
 
-(Number' a) + (Number' b) = Number' $ (Prelude.+) a b
-(String' a) + (String' b) = String' $ a ++ b
-(List'   a) + (List'   b) = List'   $ a ++ b
-a + b = IOAction' . String' $ "There is no overload for " ++ show a ++ " and " ++ show b
-
-(Number' a) - (Number' b) = Number' $ (Prelude.-) a b
-(Number' a) * (Number' b) = Number' $ (Prelude.*) a b
-(Number' a) / (Number' b) = Number' $ a `div` b
-
-callFunc :: Scope -> String -> [RuntimeValue] -> (Scope, RuntimeValue)
-callFunc s "+" as@((Number' _) : _) = (s, foldl (Main.+) (Number' 0) as)
-callFunc s "+" (a@(List' _) : as) = (s, foldl (Main.+) a as)
-callFunc s "-" (a : as) = (s, foldl (Main.-) a as)
-callFunc s "*" as@((Number' _) : _) = (s, foldl (Main.*) (Number' 1) as)
-callFunc s "/" (a@(Number' _) : as) = (s, foldl (Main./) a as)
-callFunc s "=" [a, b] = (s, Number' . fromEnum $ a == b)
-callFunc s ">" [Number' a, Number' b] = (s, Number' . fromEnum $ a > b)
-callFunc s ">=" [Number' a, Number' b] = (s, Number' . fromEnum $ a >= b)
-callFunc s "<" [Number' a, Number' b] = (s, Number' . fromEnum $ a < b)
-callFunc s "<=" [Number' a, Number' b] = (s, Number' . fromEnum $ a <= b)
-callFunc s "car" [(List' a)] = (s, head a)
-callFunc s "cdr" [(List' a)] = (s, List' $ tail a)
-callFunc s "list" l = (s, List' $ l)
-callFunc s "cons" l = (s, case last l of
-                            List' la -> List' $ foldr (:) la $ init l
-                            _ -> error "Calling cons on a non array value")
-callFunc s "empty?" [List' l] = (s, Number' . fromEnum $ null l)
-callFunc s "or" (a : as) = (s, Number' . fromEnum $ foldl (\a b -> a || thruthy b) (thruthy a) as)
-callFunc s "and" (a : as) = (s, Number' . fromEnum $ foldl (\a b -> a && thruthy b) (thruthy a) as)
-callFunc s "append" l = callFunc s "+" l
-callFunc s "print" [a] = (s, IOAction' a)
-callFunc s name args =
-  case Map.lookup name s of
-    Just (Lambda' as b) -> exec (Map.union (Map.fromList $ zip as args) s) b
-    _ -> (s, IOAction' . String' $ "Unknown function " ++ name ++ " with args " ++ show args)
+standardScope :: Scope
+standardScope =
+  Map.fromList
+    [ ( "+"
+      , Intrinsic' $ \s (a:as) ->
+          ( s
+          , foldl
+              (\(Number' a) (Number' b) -> Number' $ a + b)
+              a
+              as))
+    , ( "-"
+      , Intrinsic' $ \s (a:as) ->
+          ( s
+          , foldl
+              (\(Number' a) (Number' b) -> Number' $ a - b)
+              a
+              as))
+    , ( "*"
+      , Intrinsic' $ \s (a:as) ->
+          ( s
+          , foldl
+              (\(Number' a) (Number' b) -> Number' $ a * b)
+              a
+              as))
+    , ( "/"
+      , Intrinsic' $ \s (a:as) ->
+          ( s
+          , foldl
+              (\(Number' a) (Number' b) ->
+                 Number' $ a `div` b)
+              a
+              as))
+    , ( "="
+      , Intrinsic' $ \s [a, b] ->
+          (s, Number' . fromEnum $ a == b))
+    , ( "<"
+      , Intrinsic' $ \s [Number' a, Number' b] ->
+          (s, Number' . fromEnum $ a < b))
+    , ( "<="
+      , Intrinsic' $ \s [Number' a, Number' b] ->
+          (s, Number' . fromEnum $ a <= b))
+    , ( ">"
+      , Intrinsic' $ \s [Number' a, Number' b] ->
+          (s, Number' . fromEnum $ a > b))
+    , ( ">="
+      , Intrinsic' $ \s [Number' a, Number' b] ->
+          (s, Number' . fromEnum $ a >= b))
+    , ("car", Intrinsic' $ \s [List' l] -> (s, head l))
+    , ( "cdr"
+      , Intrinsic' $ \s [List' l] -> (s, List' $ tail l))
+    , ("list", Intrinsic' $ \s as -> (s, List' as))
+    , ( "cons"
+      , Intrinsic' $ \s as ->
+          ( s
+          , case last as of
+              List' la -> List' $ foldr (:) la $ init as
+              _ -> Nil'))
+    , ( "null"
+      , Intrinsic' $ \s l ->
+          ( s
+          , case l of
+              [List' al] -> Number' . fromEnum $ null al
+              _ -> Nil'))
+    , ( "or"
+      , Intrinsic' $ \s (a:as) ->
+          ( s
+          , Number' . fromEnum $
+            foldl (\a b -> a || thruthy b) (thruthy a) as))
+    , ( "and"
+      , Intrinsic' $ \s (a:as) ->
+          ( s
+          , Number' . fromEnum $
+            foldl (\a b -> a && thruthy b) (thruthy a) as))
+    , ( "print" -- Make this not use unsafePerformIO
+      , Intrinsic' $ \s [t] ->
+          unsafePerformIO $ do
+            putStrLn $ show t
+            hFlush stdout
+            return (s, t))
+    , ( "char"
+      , Intrinsic' $ \s [t] ->
+          case t of
+            List' [Char' a] -> (s, Char' a)
+            _ -> (s, Nil'))
+    ]
 
 thruthy :: RuntimeValue -> Bool
-thruthy (Number' 0)  = False
-thruthy _            = True
+thruthy (Number' 0) = False
+thruthy Nil' = False
+thruthy _ = True
 
 exec :: Scope -> Atom -> (Scope, RuntimeValue)
 exec s (List [Identifier "lambda", List args, e]) =
-    (s, Lambda' (map (\(Identifier i) -> i) args) e)
-exec s (List [Identifier "setq", Identifier name, v]) = (Map.alter (\b ->
-    case b of
-      Just c -> b
-      Nothing -> Just . snd $ exec s v) name s, Nil)
+  (s, Lambda' (map (\(Identifier i) -> i) args) e)
+exec s (List [Identifier "setq", Identifier name, v]) =
+  ( Map.alter
+      (\b ->
+         case b of
+           Just c -> b
+           Nothing -> Just . snd $ exec s v)
+      name
+      s
+  , Nil')
 exec s (List [Identifier "defun", Identifier name, List args, e]) =
-    exec s $ List [Identifier "setq", Identifier name,
-      (List [Identifier "lambda", List args, e])]
+  exec s $
+  List
+    [ Identifier "setq"
+    , Identifier name
+    , (List [Identifier "lambda", List args, e])
+    ]
 exec s (List [Identifier "if", cond, t, e]) =
-    if thruthy . snd $ exec s cond then exec s t else exec s e
-exec s (Identifier "nil") = (s, Nil)
-exec s (List ((Identifier a) : as)) = callFunc s a $ map (snd . exec s) as
+  if thruthy . snd $ exec s cond
+    then exec s t
+    else exec s e
+exec s (Identifier "nil") = (s, Nil')
+exec s (List (f:atoms)) =
+  let args = map (snd . exec s) atoms
+   in case snd $ exec s f of
+        (Lambda' ps b) ->
+          exec (Map.union (Map.fromList $ zip ps args) s) b
+        (Intrinsic' f) -> f s args
+        _ -> (s, Nil')
 exec s (Number n) = (s, Number' n)
-exec s (StringLiteral l) = (s, String' l)
+exec s (StringLiteral l) = (s, List' $ map (Char') l)
 exec s (Quote (List q)) = (s, List' $ map (snd . exec s) q)
-exec s (Identifier n) = (s, case Map.lookup n s of
-                          Just e -> e
-                          Nothing -> Nil)
-exec s a = (s, IOAction' . String' $ "Called non-exhaustive pattern of exec with " ++ show a)
+exec s (Identifier n) =
+  ( s
+  , case Map.lookup n s of
+      Just e -> e
+      Nothing -> Nil')
+exec s a = (s, Nil')
 
 main :: IO ()
 main = do
   args <- getArgs
   source <- (readFile $ args !! 0)
-  case parse file source of
-    Just (r, as) -> do
-      _ <- foldM (\s a -> do
-        let (s', v) = exec s a
-        case v of
-          IOAction' t -> putStrLn . show $ t
-          List' ts@(IOAction' _ : _) -> mapM_ (putStrLn . show) ts
-          _ -> return ()
-        return s'
-        ) (Map.empty) as
-      return ()
-    Nothing -> empty
-  where
-    foldM :: (Monad m) => (a -> b -> m a) -> a -> [b] -> m a
-    foldM _ z [] = return z
-    foldM f z (x:xs) = do
-      z' <- f z x
-      z' `seq` foldM f z' xs
+  let a =
+        parse file source >>= \(_, as) ->
+          return $
+          foldl (\s a -> fst $ exec s a) standardScope as
+  a `deepseq` return ()

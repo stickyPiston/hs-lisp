@@ -1,29 +1,54 @@
-(defun incr (n) (+ n 1))
-(defun decr (n) (- n 1))
+(defun incf (n) (+ n 1))
+(defun decf (n) (- n 1))
 
-(defun len (l)
-  (if (empty? l) 0
-    (incr (len (cdr l)))))
+(defun length (l)
+  (if (null l) 0
+    (incf (length (cdr l)))))
 
 (defun map (f l)
-  (if (empty? l) ()
+  (if (null l) '()
     (cons (f (car l)) (map f (cdr l)))))
 
 (defun filter (f l)
-  (if (empty? l) ()
+  (if (null l) '()
   (if (f (car l))
     (cons (car l) (filter f (cdr l)))
     (filter f (cdr l)))))
 
-(defun zero? (n) (= n 0))
+(defun zerop (n) (= n 0))
 
 (defun take (n l)
-  (if (or (empty? l) (zero? n)) ()
-    (cons (car l) (take (decr n) (cdr l)))))
+  (if (or (null l) (zerop n)) '()
+    (cons (car l) (take (decf n) (cdr l)))))
 
 (defun drop (n l)
-  (if (empty? l) ()
-    (if (zero? n) l
-      (drop (decr n) (cdr l)))))
+  (if (null l) '()
+    (if (zerop n) l
+      (drop (decf n) (cdr l)))))
 
-(print (drop 2 '(1 2 3 4)))
+(defun index (n l)
+  (if (zerop n) (car l)
+    (index (decf n) (cdr l))))
+
+(defun foldl (f s l)
+  (if (= 1 (length l)) (f s (car l))
+    (f (foldl f s (cdr l)) (car l))))
+
+(defun last (l) (if (= 1 (length l)) (car l) (last (cdr l))))
+
+(defun init (l) (if (= 1 (length l)) () (cons (car l) (init (cdr l)))))
+
+(defun append (a b)
+  (if (null a) b
+    (cons (car a) (append (cdr a) b))))
+
+(defun reverse (l)
+  (if (null l) '()
+    (append (reverse (cdr l)) '((car l)))))
+
+(defun intersperse (d l)
+  (if (= 1 (length l)) '((car l))
+    (cons (car l) d (intersperse d (cdr l)))))
+
+; Main logic
+(print (intersperse (char ",") "abcd"))

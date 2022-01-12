@@ -1,6 +1,7 @@
 module Parser where
 
 import Control.Applicative
+import Data.Char
 
 newtype Parser a = Parser { parse :: String -> Maybe (String, a) }
 
@@ -45,3 +46,48 @@ parseIf f = Parser $ ca
             False -> Nothing
         ca [] = Nothing
 
+-- Lisp specific grammar
+
+data Atom
+  = Number Int
+  | Identifier String
+  | StringLiteral String
+  | List [Atom]
+  | Quote Atom
+  deriving (Show, Eq)
+
+integer :: Parser Atom
+integer = Number . read <$> spansP isDigit
+
+identifier :: Parser Atom
+identifier =
+  Identifier <$>
+  (spansP $ \c ->
+     any ($ c) [isAlpha, isNumber, isPunctuation, isSymbol] &&
+     c /= '(' && c /= ')' && c /= '\'' && c /= '"' && c /= ';')
+
+stringliteral :: Parser Atom
+stringliteral = StringLiteral <$> (charP '"' *> spanmP (/= '"') <* charP '"')
+
+wsm :: Parser String
+wsm = spanmP isSpace
+
+wss :: Parser String
+wss = spansP isSpace
+
+list :: Parser Atom
+list = List <$> (charP '(' *> wsm *> body <* wsm <* charP ')')
+  where
+    body = (:) <$> atom <*> many (wss *> atom) <|> pure []
+
+quote :: Parser Atom
+quote = Quote <$> (charP '\'' *> atom)
+
+comment :: Parser Atom
+comment = charP ';' *> spanmP (/= '\n') *> wss *> atom
+
+atom :: Parser Atom
+atom = integer <|> identifier <|> stringliteral <|> list <|> quote <|> comment
+
+file :: Parser [Atom]
+file = many $ wsm *> atom
