@@ -3,19 +3,24 @@ module Parser where
 import Control.Applicative
 import Data.Char
 
-newtype Parser a = Parser { parse :: String -> Maybe (String, a) }
+newtype Parser a =
+  Parser
+    { parse :: String -> Maybe (String, a)
+    }
 
 instance Functor Parser where
-  fmap f (Parser p) = Parser $ \input -> do
-    (r, t) <- p input
-    return (r, f t)
+  fmap f (Parser p) =
+    Parser $ \input -> do
+      (r, t) <- p input
+      return (r, f t)
 
 instance Applicative Parser where
   pure a = Parser $ \input -> return (input, a)
-  (Parser p1) <*> (Parser p2) = Parser $ \input -> do
-    (r, t) <- p1 input
-    (r', t') <- p2 r
-    return $ (r', t t')
+  (Parser p1) <*> (Parser p2) =
+    Parser $ \input -> do
+      (r, t) <- p1 input
+      (r', t') <- p2 r
+      return $ (r', t t')
 
 instance Alternative Parser where
   empty = Parser $ \_ -> Nothing
@@ -24,10 +29,11 @@ instance Alternative Parser where
 
 charP :: Char -> Parser Char
 charP x = Parser f
-  where f (c : cs)
-          | c == x    = Just (cs, c)
-          | otherwise = Nothing
-        f _ = Nothing
+  where
+    f (c:cs)
+      | c == x = Just (cs, c)
+      | otherwise = Nothing
+    f _ = Nothing
 
 stringP :: String -> Parser String
 stringP x = traverse charP x
@@ -40,11 +46,12 @@ spanmP = many . parseIf
 
 parseIf :: (Char -> Bool) -> Parser Char
 parseIf f = Parser $ ca
-  where ca (c : cs) = 
-          case f c of
-            True  -> Just (cs, c)
-            False -> Nothing
-        ca [] = Nothing
+  where
+    ca (c:cs) =
+      case f c of
+        True -> Just (cs, c)
+        False -> Nothing
+    ca [] = Nothing
 
 -- Lisp specific grammar
 
@@ -54,7 +61,6 @@ data Atom
   | StringLiteral String
   | List [Atom]
   | Quote Atom
-  deriving (Show, Eq)
 
 integer :: Parser Atom
 integer = Number . read <$> spansP isDigit
@@ -64,10 +70,12 @@ identifier =
   Identifier <$>
   (spansP $ \c ->
      any ($ c) [isAlpha, isNumber, isPunctuation, isSymbol] &&
-     c /= '(' && c /= ')' && c /= '\'' && c /= '"' && c /= ';')
+     c `notElem` ['(', ')', '\'', '"', ';'])
 
 stringliteral :: Parser Atom
-stringliteral = StringLiteral <$> (charP '"' *> spanmP (/= '"') <* charP '"')
+stringliteral =
+  StringLiteral <$>
+  (charP '"' *> spanmP (/= '"') <* charP '"')
 
 wsm :: Parser String
 wsm = spanmP isSpace
@@ -76,7 +84,8 @@ wss :: Parser String
 wss = spansP isSpace
 
 list :: Parser Atom
-list = List <$> (charP '(' *> wsm *> body <* wsm <* charP ')')
+list =
+  List <$> (charP '(' *> wsm *> body <* wsm <* charP ')')
   where
     body = (:) <$> atom <*> many (wss *> atom) <|> pure []
 
@@ -87,7 +96,9 @@ comment :: Parser Atom
 comment = charP ';' *> spanmP (/= '\n') *> wss *> atom
 
 atom :: Parser Atom
-atom = integer <|> identifier <|> stringliteral <|> list <|> quote <|> comment
+atom =
+  integer <|> identifier <|> stringliteral <|> list <|>
+  quote <|> comment
 
 file :: Parser [Atom]
 file = many $ wsm *> atom

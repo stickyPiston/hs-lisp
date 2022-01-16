@@ -1,12 +1,8 @@
 module Main where
 
-import Parser
-
-import Control.DeepSeq
 import qualified Data.Map.Strict as Map
+import Parser
 import System.Environment
-import System.IO
-import System.IO.Unsafe
 
 type Scope = Map.Map String RuntimeValue
 
@@ -14,22 +10,30 @@ data RuntimeValue
   = Number' Int
   | Char' Char
   | List' [RuntimeValue]
-  | Lambda' [String] Atom
+  | Lambda' Scope [String] Atom
   | Nil'
   | Intrinsic'
-      (Scope -> [RuntimeValue] -> (Scope, RuntimeValue))
-
-instance NFData RuntimeValue where
-  rnf x = seq x ()
+      Int
+      String
+      (Scope -> [RuntimeValue] -> IO (Scope, RuntimeValue))
 
 instance Eq RuntimeValue where
   (Number' a) == (Number' b) = a == b
   (List' a) == (List' b) = a == b
-  (Lambda' _ _) == (Lambda' _ _) = False
-  (Intrinsic' _) == (Intrinsic' _) = False
+  (Lambda' _ _ _) == (Lambda' _ _ _) = False
+  (Intrinsic' _ _ _) == (Intrinsic' _ _ _) = False
   (Char' a) == (Char' b) = a == b
   Nil' == Nil' = True
   _ == _ = False
+
+instance Show Atom where
+  show (List (x:xs)) =
+    "(" ++
+    (foldl (\a e -> a ++ " " ++ show e) (show x) xs) ++ ")"
+  show (Number n) = show n
+  show (Identifier i) = i
+  show (StringLiteral s) = "\"" ++ s ++ "\""
+  show (Quote a) = "'" ++ show a
 
 instance Show RuntimeValue where
   show (Number' a) = show a
@@ -40,94 +44,110 @@ instance Show RuntimeValue where
     (show . head $ a) ++
     (foldl (\a e -> a ++ " " ++ show e) "" $ tail a) ++ ")"
   show Nil' = "Nil"
-  show (Lambda' _ _) = "Lambda"
-  show (Intrinsic' _) = "Intrinsic"
+  show (Lambda' _ [] b) = "(lambda () " ++ show b ++ ")"
+  show (Lambda' _ args b) =
+    "(lambda (" ++
+    foldl (\c a -> c ++ " " ++ a) (head args) (tail args) ++
+    ") " ++ show b ++ ")"
+  show (Intrinsic' _ n _) = "(intrinsic " ++ n ++ ")"
   show (Char' c) = [c]
 
 standardScope :: Scope
 standardScope =
   Map.fromList
     [ ( "+"
-      , Intrinsic' $ \s (a:as) ->
-          ( s
-          , foldl
-              (\(Number' a) (Number' b) -> Number' $ a + b)
-              a
-              as))
+      , Intrinsic' 2 "+" $ \s (a:as) ->
+          return
+            ( s
+            , foldl
+                (\(Number' a) (Number' b) -> Number' $ a + b)
+                a
+                as))
     , ( "-"
-      , Intrinsic' $ \s (a:as) ->
-          ( s
-          , foldl
-              (\(Number' a) (Number' b) -> Number' $ a - b)
-              a
-              as))
+      , Intrinsic' 2 "-" $ \s (a:as) ->
+          return
+            ( s
+            , foldl
+                (\(Number' a) (Number' b) -> Number' $ a - b)
+                a
+                as))
     , ( "*"
-      , Intrinsic' $ \s (a:as) ->
-          ( s
-          , foldl
-              (\(Number' a) (Number' b) -> Number' $ a * b)
-              a
-              as))
+      , Intrinsic' 2 "*" $ \s (a:as) ->
+          return
+            ( s
+            , foldl
+                (\(Number' a) (Number' b) -> Number' $ a * b)
+                a
+                as))
     , ( "/"
-      , Intrinsic' $ \s (a:as) ->
-          ( s
-          , foldl
-              (\(Number' a) (Number' b) ->
-                 Number' $ a `div` b)
-              a
-              as))
+      , Intrinsic' 2 "/" $ \s (a:as) ->
+          return
+            ( s
+            , foldl
+                (\(Number' a) (Number' b) ->
+                   Number' $ a `div` b)
+                a
+                as))
     , ( "="
-      , Intrinsic' $ \s [a, b] ->
-          (s, Number' . fromEnum $ a == b))
+      , Intrinsic' 2 "=" $ \s [a, b] ->
+          return (s, Number' . fromEnum $ a == b))
     , ( "<"
-      , Intrinsic' $ \s [Number' a, Number' b] ->
-          (s, Number' . fromEnum $ a < b))
+      , Intrinsic' 2 "<" $ \s [Number' a, Number' b] ->
+          return (s, Number' . fromEnum $ a < b))
     , ( "<="
-      , Intrinsic' $ \s [Number' a, Number' b] ->
-          (s, Number' . fromEnum $ a <= b))
+      , Intrinsic' 2 "<=" $ \s [Number' a, Number' b] ->
+          return (s, Number' . fromEnum $ a <= b))
     , ( ">"
-      , Intrinsic' $ \s [Number' a, Number' b] ->
-          (s, Number' . fromEnum $ a > b))
+      , Intrinsic' 2 ">" $ \s [Number' a, Number' b] ->
+          return (s, Number' . fromEnum $ a > b))
     , ( ">="
-      , Intrinsic' $ \s [Number' a, Number' b] ->
-          (s, Number' . fromEnum $ a >= b))
-    , ("car", Intrinsic' $ \s [List' l] -> (s, head l))
+      , Intrinsic' 2 ">=" $ \s [Number' a, Number' b] ->
+          return (s, Number' . fromEnum $ a >= b))
+    , ( "car"
+      , Intrinsic' 1 "car" $ \s [List' l] ->
+          return (s, head l))
     , ( "cdr"
-      , Intrinsic' $ \s [List' l] -> (s, List' $ tail l))
-    , ("list", Intrinsic' $ \s as -> (s, List' as))
+      , Intrinsic' 1 "cdr" $ \s [List' l] ->
+          case l of
+            (_:_) -> return (s, List' $ tail l)
+            _ -> print l >>= \_ -> return (s, List' l))
+    , ( "list"
+      , Intrinsic' 1 "list" $ \s as -> return (s, List' as))
     , ( "cons"
-      , Intrinsic' $ \s as ->
-          ( s
-          , case last as of
-              List' la -> List' $ foldr (:) la $ init as
-              _ -> Nil'))
+      , Intrinsic' 2 "cons" $ \s as ->
+          return
+            ( s
+            , case last as of
+                List' la -> List' $ foldr (:) la $ init as
+                _ -> Nil'))
     , ( "null"
-      , Intrinsic' $ \s l ->
-          ( s
-          , case l of
-              [List' al] -> Number' . fromEnum $ null al
-              _ -> Nil'))
+      , Intrinsic' 1 "null" $ \s l ->
+          return
+            ( s
+            , case l of
+                [List' al] -> Number' . fromEnum $ null al
+                _ -> Nil'))
     , ( "or"
-      , Intrinsic' $ \s (a:as) ->
-          ( s
-          , Number' . fromEnum $
-            foldl (\a b -> a || thruthy b) (thruthy a) as))
+      , Intrinsic' 2 "or" $ \s (a:as) ->
+          return
+            ( s
+            , Number' . fromEnum $
+              foldl (\a b -> a || thruthy b) (thruthy a) as))
     , ( "and"
-      , Intrinsic' $ \s (a:as) ->
-          ( s
-          , Number' . fromEnum $
-            foldl (\a b -> a && thruthy b) (thruthy a) as))
-    , ( "print" -- Make this not use unsafePerformIO
-      , Intrinsic' $ \s [t] ->
-          unsafePerformIO $ do
-            putStrLn $ show t
-            hFlush stdout
-            return (s, t))
+      , Intrinsic' 2 "and" $ \s (a:as) ->
+          return
+            ( s
+            , Number' . fromEnum $
+              foldl (\a b -> a && thruthy b) (thruthy a) as))
+    , ( "print"
+      , Intrinsic' 1 "print" $ \s [t] -> do
+          putStrLn $ show t
+          return (s, Nil'))
     , ( "char"
-      , Intrinsic' $ \s [t] ->
+      , Intrinsic' 1 "char" $ \s [t] ->
           case t of
-            List' [Char' a] -> (s, Char' a)
-            _ -> (s, Nil'))
+            List' [Char' a] -> return (s, Char' a)
+            _ -> return (s, Nil'))
     ]
 
 thruthy :: RuntimeValue -> Bool
@@ -135,18 +155,20 @@ thruthy (Number' 0) = False
 thruthy Nil' = False
 thruthy _ = True
 
-exec :: Scope -> Atom -> (Scope, RuntimeValue)
+exec :: Scope -> Atom -> IO (Scope, RuntimeValue)
 exec s (List [Identifier "lambda", List args, e]) =
-  (s, Lambda' (map (\(Identifier i) -> i) args) e)
-exec s (List [Identifier "setq", Identifier name, v]) =
-  ( Map.alter
-      (\b ->
-         case b of
-           Just c -> b
-           Nothing -> Just . snd $ exec s v)
-      name
-      s
-  , Nil')
+  return (s, Lambda' s (map (\(Identifier i) -> i) args) e)
+exec s (List [Identifier "setq", Identifier name, v]) = do
+  (_, v) <- exec s v
+  return
+    ( Map.alter
+        (\b ->
+           case b of
+             Just c -> b
+             Nothing -> Just v)
+        name
+        s
+    , Nil')
 exec s (List [Identifier "defun", Identifier name, List args, e]) =
   exec s $
   List
@@ -154,34 +176,76 @@ exec s (List [Identifier "defun", Identifier name, List args, e]) =
     , Identifier name
     , (List [Identifier "lambda", List args, e])
     ]
-exec s (List [Identifier "if", cond, t, e]) =
-  if thruthy . snd $ exec s cond
+exec s (List [Identifier "if", cond, t, e]) = do
+  (_, v) <- exec s cond
+  if thruthy v
     then exec s t
     else exec s e
-exec s (Identifier "nil") = (s, Nil')
-exec s (List (f:atoms)) =
-  let args = map (snd . exec s) atoms
-   in case snd $ exec s f of
-        (Lambda' ps b) ->
-          exec (Map.union (Map.fromList $ zip ps args) s) b
-        (Intrinsic' f) -> f s args
-        _ -> (s, Nil')
-exec s (Number n) = (s, Number' n)
-exec s (StringLiteral l) = (s, List' $ map (Char') l)
-exec s (Quote (List q)) = (s, List' $ map (snd . exec s) q)
+exec s (Identifier "nil") = return (s, Nil')
+exec s (List (f:atoms)) = do
+  vs <- sequence $ map (\a -> exec s a) atoms
+  let s' = Map.unions $ map fst vs
+  let args = map snd vs
+  (_, v) <- exec s f
+  case v of
+    (Lambda' ls ps b) ->
+      if length args < length ps
+        then let cps =
+                   [ Identifier $ "$" ++ show i
+                   | i <- [1 .. length ps - length args]
+                   ]
+              in exec (Map.union ls s') $
+                 List
+                   [ Identifier "lambda"
+                   , List cps
+                   , List $ [f] ++ atoms ++ cps
+                   ]
+        else exec
+               (Map.unions
+                  [Map.fromList $ zip ps args, ls, s'])
+               b
+    i@(Intrinsic' np nm f) ->
+      let curriedParams = max 0 $ np - length atoms
+       in if curriedParams > 0
+            then let ps =
+                       [ "$" ++ show i
+                       | i <- [1 .. curriedParams]
+                       ]
+                  in return
+                       ( s
+                       , Lambda' Map.empty ps $
+                         List $
+                         [Identifier nm] ++
+                         atoms ++ map Identifier ps)
+            else f s' args
+    t -> do
+      putStrLn $ "Calling non-function " ++ show t
+      return (s, Nil')
+exec s (Number n) = return (s, Number' n)
+exec s (StringLiteral l) = return (s, List' $ map (Char') l)
+exec s (Quote (List q)) = do
+  l <- sequence $ map (\e -> exec s e >>= return . snd) q
+  return (s, List' l)
 exec s (Identifier n) =
-  ( s
-  , case Map.lookup n s of
-      Just e -> e
-      Nothing -> Nil')
-exec s a = (s, Nil')
+  return
+    ( s
+    , case Map.lookup n s of
+        Just e -> e
+        Nothing -> Nil')
+exec s a = return (s, Nil')
 
 main :: IO ()
 main = do
   args <- getArgs
   source <- (readFile $ args !! 0)
-  let a =
-        parse file source >>= \(_, as) ->
-          return $
-          foldl (\s a -> fst $ exec s a) standardScope as
-  a `deepseq` return ()
+  case parse file source of
+    Just (r, as) -> do
+      foldl
+        (\s a -> do
+           s' <- s
+           (s'', v) <- exec s' a
+           return s'')
+        (pure standardScope)
+        as
+      return ()
+    Nothing -> return ()
