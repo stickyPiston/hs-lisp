@@ -14,6 +14,7 @@ data RuntimeValue
   | List' [RuntimeValue]
   | Lambda' Scope [String] Atom
   | Nil'
+  | Symbol' String
   | Intrinsic'
       Int
       String
@@ -26,6 +27,7 @@ instance Eq RuntimeValue where
   (Intrinsic' _ _ _) == (Intrinsic' _ _ _) = False
   (Char' a) == (Char' b) = a == b
   Nil' == Nil' = True
+  (Symbol' a) == (Symbol' b) = a == b
   _ == _ = False
 
 instance Show Atom where
@@ -53,6 +55,7 @@ instance Show RuntimeValue where
     ") " ++ show b ++ ")"
   show (Intrinsic' _ n _) = "(intrinsic " ++ n ++ ")"
   show (Char' c) = [c]
+  show (Symbol' s) = '\'' : s
 
 standardScope :: Scope
 standardScope =
@@ -144,7 +147,7 @@ standardScope =
     , ( "print"
       , Intrinsic' 1 "print" $ \s [t] -> do
           putStrLn $ show t
-          return (s, Nil'))
+          return (s, t))
     , ( "char"
       , Intrinsic' 1 "char" $ \s [t] ->
           case t of
@@ -179,14 +182,14 @@ exec s (List [Identifier "setq", Identifier name, v]) = do
   case ev of
     Right (_, v) ->
       return . Right $
-        ( Map.alter
-            (\b ->
-               case b of
-                 Just c -> b
-                 Nothing -> Just v)
-            name
-            s
-        , Nil')
+      ( Map.alter
+          (\b ->
+             case b of
+               Just c -> b
+               Nothing -> Just v)
+          name
+          s
+      , Nil')
     e -> return e
 exec s (List [Identifier "defun", Identifier name, List args, e]) =
   exec s $
@@ -203,6 +206,26 @@ exec s (List [Identifier "if", cond, t, e]) = do
         then exec s t
         else exec s e
     e -> return e
+exec s (List [Identifier "let", List bindings, prog]) = do
+  let exbs =
+        map
+          (\b ->
+             case b of
+               List [Identifier i, a] -> (i, exec s a)
+               _ ->
+                 ( ""
+                 , return . Left $
+                   ["Malformed let* statement"]))
+          bindings
+  ebs <- sequence $ map snd exbs
+  let is = map fst exbs
+  if any isLeft ebs
+    then return . Left . concat . lefts $ ebs
+    else let s' =
+               foldl (\m (n, v) -> Map.insert n v m) s .
+               zip is . map snd . rights $
+               ebs
+          in exec s' prog
 exec s (Identifier "nil") = return . Right $ (s, Nil')
 exec s (List (f:atoms)) = do
   vs <- sequence $ map (\a -> exec s a) atoms
@@ -264,10 +287,10 @@ exec s (Quote a) =
         then return . Left . concat $ lefts l
         else return . Right $
              (s, List' . map snd $ rights l) -- rights l should return all elements
-    -- TODO: Add support for symbols
+    Identifier i -> return . Right $ (s, Symbol' i)
+    Number n -> return . Right $ (s, Number' n)
     _ ->
-      return . Left $
-      ["Quoting a non-list value is not supported yet"]
+      return . Left $ ["Quoting this value is not allowed"]
 exec s (Identifier n) =
   return . Right $
   ( s
@@ -283,24 +306,20 @@ main = do
   args <- getArgs
   source <- (readFile $ args !! 0)
   case parse file source of
-    Just (r, as) ->
-      if (length $ filter (not . isSpace) r) > 0
-         then putStrLn $ "Parsing error near\n" ++
-           takeWhile (/= '\n') r
-         else do
-          foldl
-            (\s a -> do
-               s' <- s
-               if s' == Map.empty
-                 then return s'
-                 else do
-                   t <- exec s' a
-                   case t of
-                     Left es -> do
-                       mapM_ putStrLn es
-                       return Map.empty
-                     Right (s'', r) -> return s'')
-            (pure standardScope)
-            as
-          return ()
+    Just (r, as) -> do
+      foldl
+        (\s a -> do
+           s' <- s
+           if s' == Map.empty
+             then return s'
+             else do
+               t <- exec s' a
+               case t of
+                 Left es -> do
+                   mapM_ putStrLn es
+                   return Map.empty
+                 Right (s'', r) -> return s'')
+        (pure standardScope)
+        as
+      return ()
     Nothing -> return ()

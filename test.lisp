@@ -1,6 +1,14 @@
 (setq incf (+ 1))
 (defun decf (a) (- a 1))
 
+; Pair helper functions
+
+(defun pair (a b) (list a b))
+(defun fst (p) (car p))
+(defun snd (p) (car (cdr p)))
+
+; List helper functions
+
 (defun length (l)
   (if (null l)
     0
@@ -68,5 +76,51 @@
 
 (setq sum (foldl + 0))
 
-(defun a (10) 10) ; This will yield an error when called
-(print (a 10))
+(defun zip (a b)
+  (if (or (null a) (null b))
+    '()
+    (cons
+      (pair (car a) (car b))
+      (zip (cdr a) (cdr b)))))
+
+; Map helper functions
+
+(defun lookup (k m)
+  (if (null m) nil
+    (let ((p (car m)))
+      (if (= (fst p) k)
+        (snd p)
+        (lookup k (cdr m))))))
+
+(defun union (a b) 
+  (if (null b)
+    a
+    (let ((c (car b)))
+      (if (= nil (lookup (fst c) a))
+        (union (cons c a) (cdr b))
+        (union a (cdr b))))))
+
+(defun insert (p m) (cons p m))
+
+; A \ B
+(defun difference (a b)
+  (if (null a)
+    '()
+    (if (= nil (lookup (fst (car a)) b))
+      (cons (car a) (difference (cdr a) b))
+      (difference (cdr a) b))))
+
+(setq keys (map fst))
+(setq values (map snd))
+
+(print (union
+         '((pair 'a 10) (pair 'b 20))
+         '((pair 'b 30) (pair 'c 30))))
+(print (difference
+         '((pair 'a 10) (pair 'b 20))
+         '((pair 'b 30) (pair 'c 30))))
+(print (keys '((pair 'a 10) (pair 'b 20))))
+(print (values '((pair 'a 10) (pair 'b 20))))
+
+(setq m '((pair 'a 10) (pair 'b 20)))
+(print (zip (keys m) (values m)))
