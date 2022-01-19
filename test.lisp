@@ -68,4 +68,5 @@
 
 (setq sum (foldl + 0))
 
-(print (sum '(1 2 3 4)))
+(defun a (10) 10) ; This will yield an error when called
+(print (a 10))

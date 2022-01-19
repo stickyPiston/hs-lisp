@@ -1,5 +1,7 @@
 module Main where
 
+import Data.Char (isSpace)
+import Data.Either (isLeft, lefts, rights)
 import qualified Data.Map.Strict as Map
 import Parser
 import System.Environment
@@ -155,20 +157,37 @@ thruthy (Number' 0) = False
 thruthy Nil' = False
 thruthy _ = True
 
-exec :: Scope -> Atom -> IO (Scope, RuntimeValue)
+exec ::
+     Scope
+  -> Atom
+  -> IO (Either [String] (Scope, RuntimeValue))
 exec s (List [Identifier "lambda", List args, e]) =
-  return (s, Lambda' s (map (\(Identifier i) -> i) args) e)
+  let params = map getName args
+   in return $
+      if any isLeft params
+        then Left . concat $ lefts params
+        else Right (s, Lambda' s (rights params) e)
+  where
+    getName (Identifier i) = Right i
+    getName a =
+      Left
+        [ "Expected an identifier in parameter list, instead got " ++
+          show a
+        ]
 exec s (List [Identifier "setq", Identifier name, v]) = do
-  (_, v) <- exec s v
-  return
-    ( Map.alter
-        (\b ->
-           case b of
-             Just c -> b
-             Nothing -> Just v)
-        name
-        s
-    , Nil')
+  ev <- exec s v
+  case ev of
+    Right (_, v) ->
+      return . Right $
+        ( Map.alter
+            (\b ->
+               case b of
+                 Just c -> b
+                 Nothing -> Just v)
+            name
+            s
+        , Nil')
+    e -> return e
 exec s (List [Identifier "defun", Identifier name, List args, e]) =
   exec s $
   List
@@ -177,75 +196,111 @@ exec s (List [Identifier "defun", Identifier name, List args, e]) =
     , (List [Identifier "lambda", List args, e])
     ]
 exec s (List [Identifier "if", cond, t, e]) = do
-  (_, v) <- exec s cond
-  if thruthy v
-    then exec s t
-    else exec s e
-exec s (Identifier "nil") = return (s, Nil')
+  ev <- exec s cond
+  case ev of
+    Right (_, v) ->
+      if thruthy v
+        then exec s t
+        else exec s e
+    e -> return e
+exec s (Identifier "nil") = return . Right $ (s, Nil')
 exec s (List (f:atoms)) = do
   vs <- sequence $ map (\a -> exec s a) atoms
-  let s' = Map.unions $ map fst vs
-  let args = map snd vs
-  (_, v) <- exec s f
-  case v of
-    (Lambda' ls ps b) ->
-      if length args < length ps
-        then let cps =
-                   [ Identifier $ "$" ++ show i
-                   | i <- [1 .. length ps - length args]
-                   ]
-              in exec (Map.union ls s') $
-                 List
-                   [ Identifier "lambda"
-                   , List cps
-                   , List $ [f] ++ atoms ++ cps
-                   ]
-        else exec
-               (Map.unions
-                  [Map.fromList $ zip ps args, ls, s'])
-               b
-    i@(Intrinsic' np nm f) ->
-      let curriedParams = max 0 $ np - length atoms
-       in if curriedParams > 0
-            then let ps =
-                       [ "$" ++ show i
-                       | i <- [1 .. curriedParams]
-                       ]
-                  in return
-                       ( s
-                       , Lambda' Map.empty ps $
-                         List $
-                         [Identifier nm] ++
-                         atoms ++ map Identifier ps)
-            else f s' args
-    t -> do
-      putStrLn $ "Calling non-function " ++ show t
-      return (s, Nil')
-exec s (Number n) = return (s, Number' n)
-exec s (StringLiteral l) = return (s, List' $ map (Char') l)
-exec s (Quote (List q)) = do
-  l <- sequence $ map (\e -> exec s e >>= return . snd) q
-  return (s, List' l)
+  if any isLeft vs
+    then return . Left . concat $ lefts vs
+    else do
+      let s' = Map.unions . map fst $ rights vs
+      let args = map snd $ rights vs
+      r <- exec s f
+      case r of
+        Right (_, v) ->
+          case v of
+            (Lambda' ls ps b) ->
+              if length args < length ps
+                then let cps =
+                           [ Identifier $ "$" ++ show i
+                           | i <-
+                               [1 .. length ps - length args]
+                           ]
+                      in exec (Map.union ls s') $
+                         List
+                           [ Identifier "lambda"
+                           , List cps
+                           , List $ [f] ++ atoms ++ cps
+                           ]
+                else exec
+                       (Map.unions
+                          [ Map.fromList $ zip ps args
+                          , ls
+                          , s'
+                          ])
+                       b
+            i@(Intrinsic' np nm f) ->
+              let curriedParams = max 0 $ np - length atoms
+               in if curriedParams > 0
+                    then let ps =
+                               [ "$" ++ show i
+                               | i <- [1 .. curriedParams]
+                               ]
+                          in return . Right $
+                             ( s
+                             , Lambda' Map.empty ps $
+                               List $
+                               [Identifier nm] ++
+                               atoms ++ map Identifier ps)
+                    else f s' args >>= return . Right
+            t -> do
+              return . Left $
+                ["Calling non-function " ++ show t]
+        e -> return e
+exec s (Number n) = return . Right $ (s, Number' n)
+exec s (StringLiteral l) =
+  return . Right $ (s, List' $ map (Char') l)
+exec s (Quote a) =
+  case a of
+    List q -> do
+      l <- sequence $ map (\e -> exec s e) q
+      if any isLeft l
+        then return . Left . concat $ lefts l
+        else return . Right $
+             (s, List' . map snd $ rights l) -- rights l should return all elements
+    -- TODO: Add support for symbols
+    _ ->
+      return . Left $
+      ["Quoting a non-list value is not supported yet"]
 exec s (Identifier n) =
-  return
-    ( s
-    , case Map.lookup n s of
-        Just e -> e
-        Nothing -> Nil')
-exec s a = return (s, Nil')
+  return . Right $
+  ( s
+  , case Map.lookup n s of
+      Just e -> e
+      Nothing -> Nil')
+exec s a =
+  return . Left $
+  ["Parsing error: unknown sequence of tokens"]
 
 main :: IO ()
 main = do
   args <- getArgs
   source <- (readFile $ args !! 0)
   case parse file source of
-    Just (r, as) -> do
-      foldl
-        (\s a -> do
-           s' <- s
-           (s'', v) <- exec s' a
-           return s'')
-        (pure standardScope)
-        as
-      return ()
+    Just (r, as) ->
+      if (length $ filter (not . isSpace) r) > 0
+         then putStrLn $ "Parsing error near\n" ++
+           takeWhile (/= '\n') r
+         else do
+          foldl
+            (\s a -> do
+               s' <- s
+               if s' == Map.empty
+                 then return s'
+                 else do
+                   t <- exec s' a
+                   case t of
+                     Left es -> do
+                       mapM_ putStrLn es
+                       return Map.empty
+                     Right (s'', r) -> return s'')
+            (pure standardScope)
+            as
+          return ()
     Nothing -> return ()

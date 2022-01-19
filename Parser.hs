@@ -54,7 +54,6 @@ parseIf f = Parser $ ca
     ca [] = Nothing
 
 -- Lisp specific grammar
-
 data Atom
   = Number Int
   | Identifier String
@@ -98,7 +97,8 @@ comment = charP ';' *> spanmP (/= '\n') *> wss *> atom
 atom :: Parser Atom
 atom =
   integer <|> identifier <|> stringliteral <|> list <|>
-  quote <|> comment
+  quote <|>
+  comment
 
 file :: Parser [Atom]
 file = many $ wsm *> atom
