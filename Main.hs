@@ -1,10 +1,12 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Main where
 
-import Data.Char (isSpace)
+import Data.Char (chr, isSpace, ord)
 import Data.Either (isLeft, lefts, rights)
 import qualified Data.Map.Strict as Map
 import Parser
-import System.Environment
+import System.Environment (getArgs)
 
 type Scope = Map.Map String RuntimeValue
 
@@ -18,7 +20,8 @@ data RuntimeValue
   | Intrinsic'
       Int
       String
-      (Scope -> [RuntimeValue] -> IO (Scope, RuntimeValue))
+      (Scope -> [RuntimeValue] -> IO (Either [String] ( Scope
+                                                      , RuntimeValue)))
 
 instance Eq RuntimeValue where
   (Number' a) == (Number' b) = a == b
@@ -57,103 +60,188 @@ instance Show RuntimeValue where
   show (Char' c) = [c]
   show (Symbol' s) = '\'' : s
 
+typeof :: RuntimeValue -> String
+typeof (Number' _) = "number"
+typeof (List' _) = "list"
+typeof (Lambda' _ _ _) = "lambda"
+typeof Nil' = "nil"
+typeof (Char' _) = "char"
+typeof (Symbol' _) = "symbol"
+typeof (Intrinsic' _ _ _) = "intrinsic"
+
 standardScope :: Scope
 standardScope =
   Map.fromList
-    [ ( "+"
-      , Intrinsic' 2 "+" $ \s (a:as) ->
-          return
-            ( s
-            , foldl
-                (\(Number' a) (Number' b) -> Number' $ a + b)
-                a
-                as))
-    , ( "-"
-      , Intrinsic' 2 "-" $ \s (a:as) ->
-          return
-            ( s
-            , foldl
-                (\(Number' a) (Number' b) -> Number' $ a - b)
-                a
-                as))
-    , ( "*"
-      , Intrinsic' 2 "*" $ \s (a:as) ->
-          return
-            ( s
-            , foldl
-                (\(Number' a) (Number' b) -> Number' $ a * b)
-                a
-                as))
-    , ( "/"
-      , Intrinsic' 2 "/" $ \s (a:as) ->
-          return
-            ( s
-            , foldl
-                (\(Number' a) (Number' b) ->
-                   Number' $ a `div` b)
-                a
-                as))
+    [ generateOperator "+" (+)
+    , generateOperator "-" (-)
+    , generateOperator "*" (*)
+    , generateOperator "/" div
+    , generateOperator "<" $ (fromEnum .) . (<)
+    , generateOperator "<=" $ (fromEnum .) . (<=)
+    , generateOperator ">" $ (fromEnum .) . (>)
+    , generateOperator ">=" $ (fromEnum .) . (>=)
     , ( "="
-      , Intrinsic' 2 "=" $ \s [a, b] ->
-          return (s, Number' . fromEnum $ a == b))
-    , ( "<"
-      , Intrinsic' 2 "<" $ \s [Number' a, Number' b] ->
-          return (s, Number' . fromEnum $ a < b))
-    , ( "<="
-      , Intrinsic' 2 "<=" $ \s [Number' a, Number' b] ->
-          return (s, Number' . fromEnum $ a <= b))
-    , ( ">"
-      , Intrinsic' 2 ">" $ \s [Number' a, Number' b] ->
-          return (s, Number' . fromEnum $ a > b))
-    , ( ">="
-      , Intrinsic' 2 ">=" $ \s [Number' a, Number' b] ->
-          return (s, Number' . fromEnum $ a >= b))
+      , Intrinsic' 2 "=" $ \s as ->
+          return $
+          case as of
+            [a, b] -> Right (s, Number' . fromEnum $ a == b)
+            _ ->
+              Left
+                [ "Incorrect number of arguments in call to ="
+                ])
     , ( "car"
-      , Intrinsic' 1 "car" $ \s [List' l] ->
-          return (s, head l))
+      , Intrinsic' 1 "car" $
+        curry
+          (\case
+             (s, [List' l]) -> return . Right $ (s, head l)
+             (s, [v]) ->
+               return . Left $
+               [ "Cannot convert " ++
+                 typeof v ++ " to List in call to car"
+               ]
+             (_, _) ->
+               return . Left $
+               [ "Incorrect number of arguments in call to car"
+               ]))
     , ( "cdr"
-      , Intrinsic' 1 "cdr" $ \s [List' l] ->
-          case l of
-            (_:_) -> return (s, List' $ tail l)
-            _ -> print l >>= \_ -> return (s, List' l))
+      , Intrinsic' 1 "cdr" $
+        curry
+          (\case
+             (s, [List' l]) ->
+               return . Right $ (s, List' $ tail l)
+             (s, [v]) ->
+               return . Left $
+               [ "Cannot convert " ++
+                 typeof v ++ " to List in call to cdr"
+               ]
+             (_, _) ->
+               return . Left $
+               [ "Incorrect number of arguments in call to cdr"
+               ]))
     , ( "list"
-      , Intrinsic' 1 "list" $ \s as -> return (s, List' as))
+      , Intrinsic' 1 "list" $ \s as ->
+          return . Right $ (s, List' as))
     , ( "cons"
       , Intrinsic' 2 "cons" $ \s as ->
-          return
-            ( s
-            , case last as of
-                List' la -> List' $ foldr (:) la $ init as
-                _ -> Nil'))
+          return $
+          case last as of
+            List' la ->
+              Right $ (s, List' $ foldr (:) la $ init as)
+            _ ->
+              Left
+                [ "Last argument to cons must a be list, but received " ++
+                  typeof (last as)
+                ])
     , ( "null"
-      , Intrinsic' 1 "null" $ \s l ->
-          return
-            ( s
-            , case l of
-                [List' al] -> Number' . fromEnum $ null al
-                _ -> Nil'))
+      , Intrinsic' 1 "null" $
+        curry
+          (\case
+             (s, [List' l]) ->
+               return . Right $
+               (s, Number' . fromEnum $ null l)
+             (_, [v]) ->
+               return . Left $
+               [ "Cannot convert " ++
+                 typeof v ++ " to List in call to null"
+               ]
+             (_, v) ->
+               return . Left $
+               [ "Incorrect number of arguments in call to cdr, expected 1, got " ++
+                 show (length v)
+               ]))
     , ( "or"
       , Intrinsic' 2 "or" $ \s (a:as) ->
-          return
-            ( s
-            , Number' . fromEnum $
-              foldl (\a b -> a || thruthy b) (thruthy a) as))
+          return . Right $
+          ( s
+          , Number' . fromEnum $
+            foldl (\a b -> a || thruthy b) (thruthy a) as))
     , ( "and"
       , Intrinsic' 2 "and" $ \s (a:as) ->
-          return
-            ( s
-            , Number' . fromEnum $
-              foldl (\a b -> a && thruthy b) (thruthy a) as))
+          return . Right $
+          ( s
+          , Number' . fromEnum $
+            foldl (\a b -> a && thruthy b) (thruthy a) as))
     , ( "print"
       , Intrinsic' 1 "print" $ \s [t] -> do
           putStrLn $ show t
-          return (s, t))
+          return . Right $ (s, t))
     , ( "char"
-      , Intrinsic' 1 "char" $ \s [t] ->
-          case t of
-            List' [Char' a] -> return (s, Char' a)
-            _ -> return (s, Nil'))
+      , Intrinsic' 1 "char" $
+        curry
+          (\case
+             (s, [List' [Char' a]]) ->
+               return . Right $ (s, Char' a)
+             (s, [v]) ->
+               return . Left $
+               [ "Cannot convert " ++
+                 typeof v ++ " to List in call to char"
+               ]
+             (_, v) ->
+               return . Left $
+               [ "Incorrect number of arguments in call to char, expected 1, got " ++
+                 show (length v)
+               ]))
+    , ( "to-ascii"
+      , Intrinsic' 1 "to-ascii" $
+        curry
+          (\case
+             (s, [Number' n]) ->
+               return . Right $ (s, Char' $ chr n)
+             (s, [v]) ->
+               return . Left $
+               [ "Cannot convert " ++
+                 typeof v ++
+                 " to Number in call to to-ascii"
+               ]
+             (_, v) ->
+               return . Left $
+               [ "Incorrect number of arguments in call to to-ascii, expected 1, got " ++
+                 show (length v)
+               ]))
+    , ( "from-ascii"
+      , Intrinsic' 1 "to-ascii" $
+        curry
+          (\case
+             (s, [Char' n]) ->
+               return . Right $ (s, Number' $ ord n)
+             (s, [v]) ->
+               return . Left $
+               [ "Cannot convert " ++
+                 typeof v ++
+                 " to Number in call to to-ascii"
+               ]
+             (_, v) ->
+               return . Left $
+               [ "Incorrect number of arguments in call to to-ascii, expected 1, got " ++
+                 show (length v)
+               ]))
     ]
+  where
+    generateOperator ::
+         String
+      -> (Int -> Int -> Int)
+      -> (String, RuntimeValue)
+    generateOperator name op =
+      ( name
+      , Intrinsic' 2 name $ \s as ->
+          let ns =
+                map
+                  (\case
+                     (Number' n) -> Right $ n
+                     a ->
+                       Left $
+                       "Cannot convert " ++
+                       typeof a ++
+                       " to Number in call to " ++ name)
+                  as
+           in return $
+              if any isLeft ns
+                then Left $ lefts ns
+                else let rns = rights ns
+                      in Right
+                           ( s
+                           , Number' $
+                             foldl op (head rns) (tail rns)))
 
 thruthy :: RuntimeValue -> Bool
 thruthy (Number' 0) = False
@@ -209,13 +297,11 @@ exec s (List [Identifier "if", cond, t, e]) = do
 exec s (List [Identifier "let", List bindings, prog]) = do
   let exbs =
         map
-          (\b ->
-             case b of
-               List [Identifier i, a] -> (i, exec s a)
-               _ ->
-                 ( ""
-                 , return . Left $
-                   ["Malformed let* statement"]))
+          (\case
+             List [Identifier i, a] -> (i, exec s a)
+             _ ->
+               ( ""
+               , return . Left $ ["Malformed let statement"]))
           bindings
   ebs <- sequence $ map snd exbs
   let is = map fst exbs
@@ -228,7 +314,7 @@ exec s (List [Identifier "let", List bindings, prog]) = do
           in exec s' prog
 exec s (Identifier "nil") = return . Right $ (s, Nil')
 exec s (List (f:atoms)) = do
-  vs <- sequence $ map (\a -> exec s a) atoms
+  vs <- sequence $ map (exec s) atoms
   if any isLeft vs
     then return . Left . concat $ lefts vs
     else do
@@ -258,7 +344,7 @@ exec s (List (f:atoms)) = do
                           , s'
                           ])
                        b
-            i@(Intrinsic' np nm f) ->
+            (Intrinsic' np nm f) ->
               let curriedParams = max 0 $ np - length atoms
                in if curriedParams > 0
                     then let ps =
@@ -271,7 +357,7 @@ exec s (List (f:atoms)) = do
                                List $
                                [Identifier nm] ++
                                atoms ++ map Identifier ps)
-                    else f s' args >>= return . Right
+                    else f s' args
             t -> do
               return . Left $
                 ["Calling non-function " ++ show t]
@@ -282,11 +368,11 @@ exec s (StringLiteral l) =
 exec s (Quote a) =
   case a of
     List q -> do
-      l <- sequence $ map (\e -> exec s e) q
+      l <- sequence $ map (exec s) q
       if any isLeft l
         then return . Left . concat $ lefts l
         else return . Right $
-             (s, List' . map snd $ rights l) -- rights l should return all elements
+             (s, List' . map snd $ rights l)
     Identifier i -> return . Right $ (s, Symbol' i)
     Number n -> return . Right $ (s, Number' n)
     _ ->
@@ -306,20 +392,23 @@ main = do
   args <- getArgs
   source <- (readFile $ args !! 0)
   case parse file source of
-    Just (r, as) -> do
-      foldl
-        (\s a -> do
-           s' <- s
-           if s' == Map.empty
-             then return s'
-             else do
-               t <- exec s' a
-               case t of
-                 Left es -> do
-                   mapM_ putStrLn es
-                   return Map.empty
-                 Right (s'', r) -> return s'')
-        (pure standardScope)
-        as
-      return ()
+    Just (r, as) ->
+      if 0 < (length . filter (not . isSpace) $ r)
+        then putStrLn $ "Parsing error at " ++ r
+        else do
+          foldl
+            (\s a -> do
+               s' <- s
+               if s' == Map.empty
+                 then return s'
+                 else do
+                   t <- exec s' a
+                   case t of
+                     Left es -> do
+                       mapM_ putStrLn es
+                       return Map.empty
+                     Right (s'', _) -> return s'')
+            (pure standardScope)
+            as
+          return ()
     Nothing -> return ()
