@@ -2,18 +2,12 @@ cabal-version:      2.4
 name:               hs-lisp
 version:            0.1.0.0
 
-synopsis: Lisp interpreter for a custom flavour of lisp
+synopsis:           Lisp interpreter for a custom flavour of lisp
 author:             Job Vonk
 maintainer:         sticcpistt@icloud.com
 
 executable lisp-hs
     main-is:          Main.hs
-
-    -- Modules included in this executable, other than Main.
-    -- other-modules:
-
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
     build-depends:    base ^>=4.14.3.0
                     , parsec
                     , containers
