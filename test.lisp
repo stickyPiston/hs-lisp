@@ -124,5 +124,3 @@
 
 (setq m '((pair 'a 10) (pair 'b 20)))
 (print (zip (keys m) (values m)))
-
-(print (to-ascii 33))

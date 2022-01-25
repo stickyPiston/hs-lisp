@@ -1,12 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 
-module Main where
+module Evaluator where
 
 import Data.Char (chr, isSpace, ord)
 import Data.Either (isLeft, lefts, rights)
 import qualified Data.Map.Strict as Map
+import Data.Maybe (isNothing)
 import Parser
-import System.Environment (getArgs)
 
 type Scope = Map.Map String RuntimeValue
 
@@ -37,6 +37,7 @@ instance Show Atom where
   show (List (x:xs)) =
     "(" ++
     (foldl (\a e -> a ++ " " ++ show e) (show x) xs) ++ ")"
+  show (List []) = "()"
   show (Number n) = show n
   show (Identifier i) = i
   show (StringLiteral s) = "\"" ++ s ++ "\""
@@ -215,6 +216,35 @@ standardScope =
                [ "Incorrect number of arguments in call to to-ascii, expected 1, got " ++
                  show (length v)
                ]))
+    , ( "throw"
+      , Intrinsic' 1 "throw" $
+        curry
+          (\case
+             (s, [List' cs]) ->
+               let ecs =
+                     map
+                       (\case
+                          Char' c -> Right c
+                          v ->
+                            Left $
+                            "Cannot convert " ++
+                            typeof v ++
+                            " to Char in call to throw")
+                       cs
+                in return . Left $
+                   if any isLeft ecs
+                     then lefts ecs
+                     else [rights ecs]
+             (s, [v]) ->
+               return . Left $
+               [ "Cannot convert " ++
+                 typeof v ++ " to List in call to throw"
+               ]
+             (_, v) ->
+               return . Left $
+               [ "Incorrect number of arguments in call to throw, expected 1, got " ++
+                 show (length v)
+               ]))
     ]
   where
     generateOperator ::
@@ -343,7 +373,14 @@ exec s (List (f:atoms)) = do
                           , ls
                           , s'
                           ])
-                       b
+                       b >>= \case
+                       Left es ->
+                         return . Left $
+                         map
+                           (++ "\nIn evaluation of " ++
+                               show (List $ f : atoms))
+                           es
+                       v -> return v
             (Intrinsic' np nm f) ->
               let curriedParams = max 0 $ np - length atoms
                in if curriedParams > 0
@@ -357,7 +394,14 @@ exec s (List (f:atoms)) = do
                                List $
                                [Identifier nm] ++
                                atoms ++ map Identifier ps)
-                    else f s' args
+                    else f s' args >>= \case
+                           Left es ->
+                             return . Left $
+                             map
+                               (++ "\nIn evalutation of " ++
+                                   nm)
+                               es
+                           v -> return v
             t -> do
               return . Left $
                 ["Calling non-function " ++ show t]
@@ -386,29 +430,3 @@ exec s (Identifier n) =
 exec s a =
   return . Left $
   ["Parsing error: unknown sequence of tokens"]
-
-main :: IO ()
-main = do
-  args <- getArgs
-  source <- (readFile $ args !! 0)
-  case parse file source of
-    Just (r, as) ->
-      if 0 < (length . filter (not . isSpace) $ r)
-        then putStrLn $ "Parsing error at " ++ r
-        else do
-          foldl
-            (\s a -> do
-               s' <- s
-               if s' == Map.empty
-                 then return s'
-                 else do
-                   t <- exec s' a
-                   case t of
-                     Left es -> do
-                       mapM_ putStrLn es
-                       return Map.empty
-                     Right (s'', _) -> return s'')
-            (pure standardScope)
-            as
-          return ()
-    Nothing -> return ()
