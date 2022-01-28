@@ -42,7 +42,7 @@ identifier :: Parser ParsedAtom
 identifier = do
   pos <- sourcePos
   first <- letter <|> symbol
-  rest <- many (letter <|> symbol <|> digit)
+  rest <- many (letter <|> symbol <|> digit <|> char '\'')
   let atom = first : rest
    in return $ ParsedAtom pos $
       case atom of

@@ -16,3 +16,4 @@ executable lisp-hs
     default-language: Haskell2010
     other-modules:    Evaluator
                     , Parser
+                    , Grammar
