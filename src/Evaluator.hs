@@ -3,7 +3,7 @@
 module Evaluator where
 
 import Data.Char (chr, isSpace, ord)
-import Data.Either (isLeft, lefts, rights)
+import Data.Either (isLeft, lefts, rights, fromRight)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (isNothing)
 import Parser
@@ -15,6 +15,7 @@ data RuntimeValue
   | Char' Char
   | List' [RuntimeValue]
   | Lambda' Scope [String] Atom
+  | NaryLambda' Scope String Atom
   | Nil'
   | Symbol' String
   | Intrinsic'
@@ -38,6 +39,9 @@ instance Show Atom where
   show (Bool True) = "#t"
   show (Bool False) = "#f"
   show (DottedList h t) = "(" ++ (unwords $ map show h) ++ " . " ++ show t ++ ")"
+
+instance Show ParsedAtom where
+  show a = show $ atm a
 
 instance Typeof Atom where
   typeof (List _) = "list"
@@ -132,6 +136,10 @@ standardScope =
     , ( "list"
       , Intrinsic' 1 "list" $ \s as ->
           return . Right $ (s, List' as))
+    , ( "print-context"
+      , Intrinsic' 0 "print-context" $ \s _ -> do
+          print s
+          return . Right $ (s, Number' 0))
     , ( "cons"
       , Intrinsic' 2 "cons" $ \s as ->
           return $
@@ -292,12 +300,16 @@ exec ::
      Scope
   -> Atom
   -> IO (Either [String] (Scope, RuntimeValue))
-exec s (List [Identifier "lambda", List args, e]) =
-  let params = map getName args
-   in return $
-      if any isLeft params
-        then Left . concat $ lefts params
-        else Right (s, Lambda' s (rights params) e)
+exec s (List [Identifier "lambda", args, e]) =
+  case args of
+    List l -> 
+      let params = map getName l
+       in return $
+          if any isLeft params
+            then Left . concat $ lefts params
+            else Right (s, Lambda' s (rights params) e)
+    Identifier i -> 
+      return . Right $ (s, NaryLambda' s i e)
   where
     getName (Identifier i) = Right i
     getName a =
@@ -319,12 +331,12 @@ exec s (List [Identifier "setq", Identifier name, v]) = do
           s
       , Nil')
     e -> return e
-exec s (List [Identifier "defun", Identifier name, List args, e]) =
+exec s (List [Identifier "defun", Identifier name, args, e]) =
   exec s $
   List
     [ Identifier "setq"
     , Identifier name
-    , (List [Identifier "lambda", List args, e])
+    , (List [Identifier "lambda", args, e])
     ]
 exec s (List [Identifier "if", cond, t, e]) = do
   ev <- exec s cond
@@ -391,6 +403,10 @@ exec s (List (f:atoms)) = do
                                show (List $ f : atoms))
                            es
                        v -> return v
+            (NaryLambda' ls i b) ->
+              -- FIXME: Figure out currying
+              let ns = Map.unions [Map.singleton i $ List' args, ls, s]
+               in exec ns b
             (Intrinsic' np nm f) ->
               let curriedParams = max 0 $ np - length atoms
                in if curriedParams > 0

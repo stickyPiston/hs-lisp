@@ -1,6 +1,8 @@
 (setq incf (+ 1))
 (defun decf (a) (- a 1))
 
+(defun id (x) x)
+
 ; Pair helper functions
 
 (defun pair (a b) (list a b))
@@ -124,3 +126,8 @@
 
 (setq m '((pair 'a 10) (pair 'b 20)))
 (print (zip (keys m) (values m)))
+
+(defun compose (f g) (lambda (x) (f (g x)))) 
+(defun compose-n fs (foldl compose id fs))
+
+(print ((compose-n (+ 1) (+ 1) (+ 8)) 20))
