@@ -11,6 +11,7 @@ data Atom
   | List [Atom]
   | Quote Atom
   | Bool Bool
+  | Wildcard
 data ParsedAtom = ParsedAtom
   { pos :: SourcePos, atm :: Atom }
 
@@ -47,6 +48,7 @@ identifier = do
       case atom of
         "#f" -> Bool False
         "#t" -> Bool True
+        "_" -> Wildcard
         _ -> Identifier atom
 
 list :: Parser ParsedAtom

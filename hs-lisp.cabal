@@ -17,3 +17,5 @@ executable lisp-hs
     other-modules:    Evaluator
                     , Parser
                     , Grammar
+                    , Intrinsics
+                    , Value

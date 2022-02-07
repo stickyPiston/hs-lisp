@@ -1,7 +1,7 @@
 module Grammar where
 
 import Parser
-import Evaluator
+import Value
 import Data.Either (isLeft, lefts)
 
 type Errorable a = Either [String] a
@@ -50,6 +50,7 @@ verifyGrammarForAtom a@(Identifier _) = Right a
 verifyGrammarForAtom a@(Number _) = Right a
 verifyGrammarForAtom a@(StringLiteral _) = Right a
 verifyGrammarForAtom a@(Bool _) = Right a
+verifyGrammarForAtom a@(Wildcard) = Right a
 
 verifyGrammarForAtom a@(Quote v) =
   if any (== typeof v) ["identifier", "list", "number"]

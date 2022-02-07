@@ -4,6 +4,7 @@ import qualified Data.Map.Strict as Map
 import Evaluator
 import Parser
 import Grammar
+import Intrinsics
 import System.Environment (getArgs)
 import Text.ParserCombinators.Parsec (parse)
 

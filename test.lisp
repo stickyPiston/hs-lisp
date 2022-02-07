@@ -1,5 +1,5 @@
 (setq incf (+ 1))
-(defun decf (a) (- a 1))
+(setq decf (- _ 1))
 
 (defun id (x) x)
 
@@ -152,5 +152,5 @@
 (defun compose fs (foldl compose₂ id fs))
 (setq ∘ compose)
 
-(print ((∘ (+ 1) (+ 1) (+ 8)) 20))
+(print ((∘ (+ 1) (- _ 10) (+ 8)) 20))
 (print (∈ "Hello" '("hello" "world")))
