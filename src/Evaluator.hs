@@ -13,6 +13,7 @@ type Scope = Map.Map String RuntimeValue
 data RuntimeValue
   = Number' Int
   | Char' Char
+  | Bool' Bool
   | List' [RuntimeValue]
   | Lambda' Scope [String] Atom
   | NaryLambda' Scope String Atom
@@ -38,7 +39,6 @@ instance Show Atom where
   show (Quote a) = "'" ++ show a
   show (Bool True) = "#t"
   show (Bool False) = "#f"
-  show (DottedList h t) = "(" ++ (unwords $ map show h) ++ " . " ++ show t ++ ")"
 
 instance Show ParsedAtom where
   show a = show $ atm a
@@ -50,7 +50,6 @@ instance Typeof Atom where
   typeof (StringLiteral _) = "string literal"
   typeof (Quote _) = "quoted value"
   typeof (Bool _) = "boolean"
-  typeof (DottedList _ _) = "dotted list"
 
 instance Eq RuntimeValue where
   (Number' a) == (Number' b) = a == b
@@ -60,11 +59,12 @@ instance Eq RuntimeValue where
   (Char' a) == (Char' b) = a == b
   Nil' == Nil' = True
   (Symbol' a) == (Symbol' b) = a == b
+  (Bool' a) == (Bool' b) = a == b
   _ == _ = False
 
 instance Show RuntimeValue where
   show (Number' a) = show a
-  show (List' s@(Char' _:_)) = map (\(Char' c) -> c) s
+  show (List' s@(Char' _:_)) = "\"" ++ map (\(Char' c) -> c) s ++ "\""
   show (List' a) = "(" ++ (unwords $ map show a) ++ ")"
   show Nil' = "Nil"
   show (Lambda' _ [] b) = "(lambda () " ++ show b ++ ")"
@@ -74,6 +74,8 @@ instance Show RuntimeValue where
   show (Intrinsic' _ n _) = "(intrinsic " ++ n ++ ")"
   show (Char' c) = [c]
   show (Symbol' s) = '\'' : s
+  show (Bool' True) = "#t"
+  show (Bool' False) = "#f"
 
 instance Typeof RuntimeValue where
   typeof (Number' _) = "number"
@@ -83,6 +85,7 @@ instance Typeof RuntimeValue where
   typeof (Char' _) = "char"
   typeof (Symbol' _) = "symbol"
   typeof (Intrinsic' _ _ _) = "intrinsic"
+  typeof (Bool' _) = "boolean"
 
 standardScope :: Scope
 standardScope =
@@ -300,6 +303,8 @@ exec ::
      Scope
   -> Atom
   -> IO (Either [String] (Scope, RuntimeValue))
+exec s (List [Identifier "λ", args, e]) =
+  exec s (List [Identifier "lambda", args, e])
 exec s (List [Identifier "lambda", args, e]) =
   case args of
     List l -> 
@@ -453,6 +458,7 @@ exec s (Identifier n) =
   , case Map.lookup n s of
       Just e -> e
       Nothing -> Nil')
+exec s (Bool b) = return . Right $ (s, Bool' b)
 exec s a =
   return . Left $
-  ["Parsing error: unknown sequence of tokens"]
+  ["Parsing error: unknown sequence of tokens " ++ show a]

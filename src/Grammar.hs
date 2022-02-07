@@ -49,6 +49,7 @@ verifyGrammarForAtom a@(List [Identifier "let", List bindings, prog]) =
 verifyGrammarForAtom a@(Identifier _) = Right a
 verifyGrammarForAtom a@(Number _) = Right a
 verifyGrammarForAtom a@(StringLiteral _) = Right a
+verifyGrammarForAtom a@(Bool _) = Right a
 
 verifyGrammarForAtom a@(Quote v) =
   if any (== typeof v) ["identifier", "list", "number"]

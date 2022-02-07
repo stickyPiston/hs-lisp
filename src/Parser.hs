@@ -9,7 +9,6 @@ data Atom
   | Identifier String
   | StringLiteral String
   | List [Atom]
-  | DottedList [Atom] Atom
   | Quote Atom
   | Bool Bool
 data ParsedAtom = ParsedAtom
@@ -22,7 +21,7 @@ spaces :: Parser ()
 spaces = skipMany1 space
 
 symbol :: Parser Char
-symbol = oneOf "!#$%&|*+-/:<=>?@^_~,."
+symbol = noneOf "\"\'()0123456789\n\t "
 
 integer :: Parser ParsedAtom
 integer = do
@@ -52,16 +51,11 @@ identifier = do
 
 list :: Parser ParsedAtom
 list = do
+  char '('
   pos <- sourcePos
   as <- atom `sepBy` spaces
+  char ')'
   return $ ParsedAtom pos $ List (map atm as)
-
-dottedList :: Parser ParsedAtom
-dottedList = do
-  pos <- sourcePos
-  h <- atom `endBy` spaces
-  t <- char '.' >> spaces >> atom
-  return $ ParsedAtom pos $ DottedList (map atm h) (atm t)
 
 quote :: Parser ParsedAtom
 quote = do
@@ -80,11 +74,7 @@ atom = integer
     <|> identifier
     <|> quote
     <|> comment
-    <|> do
-      char '('
-      l <- try list <|> dottedList
-      char ')'
-      return l
+    <|> list
 
 file :: Parser [ParsedAtom]
 file = atom `endBy` spaces

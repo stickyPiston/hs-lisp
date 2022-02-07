@@ -3,6 +3,13 @@
 
 (defun id (x) x)
 
+; Aliases
+(defun not (a) (if a #f #t))
+(setq ¬ not)
+(setq ∧ and)
+(setq ∨ or)
+(setq : cons)
+
 ; Pair helper functions
 
 (defun pair (a b) (list a b))
@@ -19,21 +26,21 @@
 (defun map (f l)
   (if (null l)
     '()
-    (cons (f (car l)) (map f (cdr l)))))
+    (: (f (car l)) (map f (cdr l)))))
 
 (defun filter (f l)
   (if (null l)
     '()
     (if (f (car l))
-      (cons (car l) (filter f (cdr l)))
+      (: (car l) (filter f (cdr l)))
       (filter f (cdr l)))))
 
 (defun zerop (n) (= n 0))
 
 (defun take (n l)
-  (if (or (null l) (zerop n))
+  (if (∨ (null l) (zerop n))
     '()
-    (cons (car l) (take (decf n) (cdr l)))))
+    (: (car l) (take (decf n) (cdr l)))))
 
 (defun drop (n l)
   (if (null l) '()
@@ -59,31 +66,42 @@
 (defun init (l)
   (if (= 1 (length l))
     '()
-    (cons (car l) (init (cdr l)))))
+    (: (car l) (init (cdr l)))))
 
 (defun append (a b)
   (if (null a)
     b
-    (cons (car a) (append (cdr a) b))))
+    (: (car a) (append (cdr a) b))))
+(setq ++ append)
 
 (defun reverse (l)
   (if (null l)
     '()
-    (append (reverse (cdr l)) '((car l)))))
+    (++ (reverse (cdr l)) '((car l)))))
 
 (defun intersperse (d l)
   (if (= 1 (length l))
     '((car l))
-    (cons (car l) d (intersperse d (cdr l)))))
+    (: (car l) d (intersperse d (cdr l)))))
 
 (setq sum (foldl + 0))
+(setq Σ sum)
 
 (defun zip (a b)
   (if (or (null a) (null b))
     '()
-    (cons
+    (:
       (pair (car a) (car b))
       (zip (cdr a) (cdr b)))))
+
+(defun find (p l)
+  (if (null l)
+    nil
+    (if (p (car l))
+      #t
+      (find p (cdr l)))))
+(defun elem (e l) (¬ (= nil (find (= e) l))))
+(setq ∈ elem)
 
 ; Map helper functions
 
@@ -93,29 +111,32 @@
       (if (= (fst p) k)
         (snd p)
         (lookup k (cdr m))))))
+(setq !! lookup)
 
 (defun union (a b) 
   (if (null b)
     a
     (let ((c (car b)))
       (if (= nil (lookup (fst c) a))
-        (union (cons c a) (cdr b))
+        (union (: c a) (cdr b))
         (union a (cdr b))))))
+(setq ∪ union)
 
-(defun insert (p m) (cons p m))
+(defun insert (p m) (if (= nil (!! (fst p) m)) (: p m) m))
 
-; A \ B
 (defun difference (a b)
   (if (null a)
     '()
     (if (= nil (lookup (fst (car a)) b))
-      (cons (car a) (difference (cdr a) b))
+      (: (car a) (difference (cdr a) b))
       (difference (cdr a) b))))
 
 (setq keys (map fst))
 (setq values (map snd))
 
-(print (union
+; Main logic
+
+(print (∪
          '((pair 'a 10) (pair 'b 20))
          '((pair 'b 30) (pair 'c 30))))
 (print (difference
@@ -127,7 +148,9 @@
 (setq m '((pair 'a 10) (pair 'b 20)))
 (print (zip (keys m) (values m)))
 
-(defun compose (f g) (lambda (x) (f (g x)))) 
-(defun compose-n fs (foldl compose id fs))
+(defun compose₂ (f g) (λ (x) (f (g x)))) 
+(defun compose fs (foldl compose₂ id fs))
+(setq ∘ compose)
 
-(print ((compose-n (+ 1) (+ 1) (+ 8)) 20))
+(print ((∘ (+ 1) (+ 1) (+ 8)) 20))
+(print (∈ "Hello" '("hello" "world")))
