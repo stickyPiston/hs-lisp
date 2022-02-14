@@ -1,46 +1,46 @@
-(setq incf (+ 1))
-(setq decf (- _ 1))
+(defun incf (x) (+ x 1))
+(defun decf (x) (- x 1))
+(defun zerop (n) (= n 0))
 
 (defun id (x) x)
 
-; Aliases
 (defun not (a) (if a #f #t))
 (setq ¬ not)
+
+(defun and₂ (a b)
+  (if a (if b #t #f) #f))
+(defun and as (foldl and₂ #t as))
 (setq ∧ and)
+
+(defun or₂ (a b)
+  (if a #t (if b #t #f)))
+(defun or as (foldl or₂ #f as))
 (setq ∨ or)
-(setq : cons)
 
-; Pair helper functions
-
-(defun pair (a b) (list a b))
+(defun pair (a b) '(a b))
 (defun fst (p) (car p))
 (defun snd (p) (car (cdr p)))
 
-; List helper functions
-
 (defun length (l)
-  (if (null l)
-    0
+  (if (null l) 0
     (incf (length (cdr l)))))
 
 (defun map (f l)
   (if (null l)
     '()
-    (: (f (car l)) (map f (cdr l)))))
+    (cons₁ (f (car l)) (map f (cdr l)))))
 
 (defun filter (f l)
   (if (null l)
     '()
     (if (f (car l))
-      (: (car l) (filter f (cdr l)))
+      (cons₁ (car l) (filter f (cdr l)))
       (filter f (cdr l)))))
-
-(defun zerop (n) (= n 0))
 
 (defun take (n l)
   (if (∨ (null l) (zerop n))
     '()
-    (: (car l) (take (decf n) (cdr l)))))
+    (cons₁ (car l) (take (decf n) (cdr l)))))
 
 (defun drop (n l)
   (if (null l) '()
@@ -52,11 +52,7 @@
   (if (zerop n)
     (car l)
     (index (decf n) (cdr l))))
-
-(defun foldl (f s l)
-  (if (= 1 (length l))
-    (f s (car l))
-    (f (foldl f s (cdr l)) (car l))))
+(setq ! index)
 
 (defun last (l)
   (if (= 1 (length l))
@@ -66,7 +62,16 @@
 (defun init (l)
   (if (= 1 (length l))
     '()
-    (: (car l) (init (cdr l)))))
+    (cons₁ (car l) (init (cdr l)))))
+
+(defun foldr (f s l)
+  (if (null l) s
+    (f (car l) (foldr f s (cdr l)))))
+
+(defun foldl (f s l)
+  (if (= 1 (length l))
+    (f s (car l))
+    (f (foldl f s (cdr l)) (car l))))
 
 (defun append (a b)
   (if (null a)
@@ -79,12 +84,15 @@
     '()
     (++ (reverse (cdr l)) '((car l)))))
 
+(defun cons as (foldr cons₁ (last as) (init as)))
+(setq : cons)
+
 (defun intersperse (d l)
   (if (= 1 (length l))
     '((car l))
     (: (car l) d (intersperse d (cdr l)))))
 
-(setq sum (foldl + 0))
+(defun sum (l) (foldl + 0 l))
 (setq Σ sum)
 
 (defun zip (a b)
@@ -96,14 +104,12 @@
 
 (defun find (p l)
   (if (null l)
-    nil
+    #nil
     (if (p (car l))
-      #t
+      (car l)
       (find p (cdr l)))))
 (defun elem (e l) (¬ (= nil (find (= e) l))))
 (setq ∈ elem)
-
-; Map helper functions
 
 (defun lookup (k m)
   (if (null m) nil
@@ -113,7 +119,7 @@
         (lookup k (cdr m))))))
 (setq !! lookup)
 
-(defun union (a b) 
+(defun union (a b)
   (if (null b)
     a
     (let ((c (car b)))
@@ -131,10 +137,8 @@
       (: (car a) (difference (cdr a) b))
       (difference (cdr a) b))))
 
-(setq keys (map fst))
-(setq values (map snd))
-
-; Main logic
+(defun keys (m) (map fst m))
+(defun values (m) (map snd m))
 
 (print (∪
          '((pair 'a 10) (pair 'b 20))
@@ -144,13 +148,7 @@
          '((pair 'b 30) (pair 'c 30))))
 (print (keys '((pair 'a 10) (pair 'b 20))))
 (print (values '((pair 'a 10) (pair 'b 20))))
-
 (setq m '((pair 'a 10) (pair 'b 20)))
 (print (zip (keys m) (values m)))
+(print (snd (pair 10 20)))
 
-(defun compose₂ (f g) (λ (x) (f (g x)))) 
-(defun compose fs (foldl compose₂ id fs))
-(setq ∘ compose)
-
-(print ((∘ (+ 1) (- _ 10) (+ 8)) 20))
-(print (∈ "Hello" '("hello" "world")))

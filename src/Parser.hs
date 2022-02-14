@@ -12,11 +12,7 @@ data Atom
   | Quote Atom
   | Bool Bool
   | Wildcard
-data ParsedAtom = ParsedAtom
-  { pos :: SourcePos, atm :: Atom }
-
-sourcePos :: Monad m => ParsecT s u m SourcePos
-sourcePos = statePos `liftM` getParserState
+  | Comment String
 
 spaces :: Parser ()
 spaces = skipMany1 space
@@ -24,59 +20,40 @@ spaces = skipMany1 space
 symbol :: Parser Char
 symbol = noneOf "\"\'()0123456789\n\t "
 
-integer :: Parser ParsedAtom
-integer = do
-  pos <- sourcePos
-  n <- many1 digit
-  return $ ParsedAtom pos $ Number . read $ n
+integer :: Parser Atom
+integer = (Number . read) <$> (many1 digit)
 
-stringLiteral :: Parser ParsedAtom
-stringLiteral = do
-  pos <- sourcePos
-  char '"'
-  x <- many (noneOf "\"")
-  char '"'
-  return $ ParsedAtom pos $ StringLiteral x
+stringLiteral :: Parser Atom
+stringLiteral = StringLiteral <$> (char '"' *> many (noneOf "\"") <* char '"')
 
-identifier :: Parser ParsedAtom
+identifier :: Parser Atom
 identifier = do
-  pos <- sourcePos
   first <- letter <|> symbol
   rest <- many (letter <|> symbol <|> digit <|> char '\'')
   let atom = first : rest
-   in return $ ParsedAtom pos $
+   in return $
       case atom of
         "#f" -> Bool False
         "#t" -> Bool True
         "_" -> Wildcard
         _ -> Identifier atom
 
-list :: Parser ParsedAtom
-list = do
-  char '('
-  pos <- sourcePos
-  as <- atom `sepBy` spaces
-  char ')'
-  return $ ParsedAtom pos $ List (map atm as)
+list :: Parser Atom
+list = List <$> (char '(' *> atom `sepBy` spaces <* char ')')
 
-quote :: Parser ParsedAtom
-quote = do
-  pos <- sourcePos
-  char '\''
-  a <- atom
-  return $ ParsedAtom pos $ Quote (atm a)
+quote :: Parser Atom
+quote = Quote <$> (char '\'' *> atom)
 
-comment :: Parser ParsedAtom
-comment =
-  char ';' >> many (noneOf "\n") >> spaces >> atom
+comment :: Parser Atom
+comment = Comment <$> (char ';' >> manyTill (anyChar) (char '\n'))
 
-atom :: Parser ParsedAtom
+atom :: Parser Atom
 atom = integer
     <|> stringLiteral
     <|> identifier
     <|> quote
-    <|> comment
     <|> list
+    <|> comment
 
-file :: Parser [ParsedAtom]
-file = atom `endBy` spaces
+file :: Parser [Atom]
+file = atom `endBy` (spaces <|> eof)

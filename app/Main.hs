@@ -1,36 +1,31 @@
+{-# LANGUAGE ViewPatterns #-}
+
 module Main where
 
-import qualified Data.Map.Strict as Map
-import Evaluator
 import Parser
-import Grammar
-import Intrinsics
-import System.Environment (getArgs)
+import Evaluator
+import StandardContext
+
 import Text.ParserCombinators.Parsec (parse)
+import Control.Monad.Trans.Except (runExceptT)
+import System.Environment (getArgs)
+import Data.Map (empty, keys)
+import Data.List (foldl')
 
 main :: IO ()
 main = do
-  args <- getArgs
-  source <- (readFile $ args !! 0)
-  case parse file (args !! 0) source of
-    Right eas ->
-      let pes = verifyGrammar $ map atm eas
-       in case pes of
-        Left es -> mapM_ putStrLn $ map ("Parsing error: " ++) es
-        Right as -> do
-          foldl
-            (\s a -> do
-               s' <- s
-               if s' == Map.empty
-                 then return s'
-                 else do
-                   t <- exec s' a
-                   case t of
-                     Left es -> do
-                       mapM_ (putStrLn . ("ERROR: " ++)) es
-                       return Map.empty
-                     Right (s'', _) -> return s'')
-            (pure standardScope)
-            as
-          return ()
-    Left err -> putStrLn $ "Parsing error: " ++ show err
+  [path] <- getArgs
+  source <- readFile path
+  case parse file path source of
+    Right (filterComments -> as) -> do
+      foldl' (\s' a -> do
+          s <- s'
+          v <- runExceptT $ eval s a
+          either ((>> pure empty) . putStrLn <$> ("\nRuntime Error: " ++))
+            (return . fst) v
+         ) (pure standardContext) as >> pure ()
+    Left e -> putStrLn $ show e
+  where
+    filterComments = filter (not . isComment)
+    isComment (Comment _) = True
+    isComment _           = False
