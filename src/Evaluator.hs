@@ -8,10 +8,11 @@ import Data.Either (rights)
 import Control.Monad.Trans.Except
 import Data.List (intersperse)
 import Control.Monad.IO.Class (liftIO)
+import Text.ParserCombinators.Parsec (parse)
 
+import StandardContext
 import Parser
 import Value
-import StandardContext
 
 trace :: String -> Result -> Result
 trace s = withExceptT (++ ("\ncalled from " ++ s))
@@ -56,7 +57,20 @@ eval s a = case a of
     eval s $ List [Identifier "setq", name, List $ [Identifier "lambda", args, body]]
 
   List [Identifier "defun-rec", name, List args, body] ->
-    eval s $ List [Identifier "setq", name, List [Identifier "Y", List [Identifier "lambda", List [name], foldl (\ac arg -> List [Identifier "lambda", List [arg], ac]) body (reverse args)]]]
+    eval s $ List [Identifier "setq", name,
+      List [Identifier "Y",
+        List [Identifier "lambda", List [name],
+          foldl (\ac arg ->
+            List [Identifier "lambda", List [arg], ac])
+              body (reverse args)]]]
+
+  List [Identifier "import", StringLiteral path] -> do
+    ((prependedStdlib ++) -> source) <- liftIO $ readFile path
+    case parse file path source of
+      Right (filterComments -> as) ->
+        foldl (\c a -> fst <$> (flip eval a =<< c))
+          (pure standardContext) as >>= return . flip (,) Nil . (s <>)
+      Left e -> throwE $ show e
 
   List [Identifier "if", cond, t, e] -> do
     (_, c) <- trace (show cond) $ eval s cond

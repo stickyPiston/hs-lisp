@@ -57,3 +57,10 @@ atom = integer
 
 file :: Parser [Atom]
 file = atom `endBy` (spaces <|> eof)
+
+filterComments :: [Atom] -> [Atom]
+filterComments = filter (not . isComment)
+
+isComment :: Atom -> Bool
+isComment (Comment _) = True
+isComment _           = False

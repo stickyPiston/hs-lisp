@@ -25,7 +25,3 @@ main = do
             (return . fst) v
          ) (pure standardContext) as >> pure ()
     Left e -> putStrLn $ show e
-  where
-    filterComments = filter (not . isComment)
-    isComment (Comment _) = True
-    isComment _           = False

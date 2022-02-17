@@ -47,6 +47,10 @@ standardContext = fromList [
     ("=", Intrinsic $ \case
       [e1, e2] -> return . Bool $ e1 == e2
       [e] -> return $ curryIntrinsic e "="
+      v -> throwE $ "Expected 2 arguments, but received " ++ show (length v)),
+    (">", Intrinsic $ \case
+      [Number n1, Number n2] -> return . Bool $ n1 > n2
+      [Number n] -> return $ curryIntrinsic (Number n) ">"
       v -> throwE $ "Expected 2 arguments, but received " ++ show (length v))
   ]
   where 

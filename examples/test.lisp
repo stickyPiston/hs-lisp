@@ -134,11 +134,6 @@
       (: (car a) (difference (cdr a) b))
       (difference (cdr a) b))))
 
-(defun compose (f g) (λ (x) (f (g x))))
-(setq ∘ compose)
-(setq pipe (foldl ∘ id))
-(setq ->> pipe)
-
 (setq keys (map fst))
 (setq values (map snd))
 
@@ -156,4 +151,3 @@
 (print (! 3 '(1 2 3 4 5 6)))
 (defun add₅ (a b c d e) (sum '(a b c d e)))
 (print ((add₅ 1 _ 3 _ 5) 10 20))
-(print ((->> '((+ 1) (+ 3) (- _ 4) (* 2))) 10))
