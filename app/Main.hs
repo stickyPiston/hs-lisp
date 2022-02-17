@@ -15,9 +15,9 @@ import Data.List (foldl')
 main :: IO ()
 main = do
   [path] <- getArgs
-  source <- readFile path
+  ((prependedStdlib ++) -> source) <- readFile path
   case parse file path source of
-    Right (filterComments -> as) -> do
+    Right (filterComments -> as) ->
       foldl' (\s' a -> do
           s <- s'
           v <- runExceptT $ eval s a

@@ -9,9 +9,8 @@ type Result = ExceptT String IO (Context, Value)
 
 data Value
   = Number Int
-  | String String
-  | Lambda Context [String] Atom
-  | NaryLambda Context String Atom
+  | Char Char
+  | Lambda Context String Atom
   | Intrinsic ([Value] -> ExceptT String IO Value)
   | Bool Bool
   | Symbol String
@@ -36,19 +35,23 @@ instance Show Atom where
   show (Parser.Bool False) = "#f"
   show Wildcard = "_"
 
+isChar :: Value -> Bool
+isChar (Char _) = True
+isChar _ = False
+
 instance Show Value where
   show (Value.Number a) = show a
-  show (ValueList a) = "(" ++ (unwords $ map show a) ++ ")"
+  show (ValueList a)
+    | all isChar a = map (\(Char c) -> c) a
+    | otherwise = "(" ++ (unwords $ map show a) ++ ")"
   show Nil = "nil"
-  show (Lambda _ args b) =
-    "(lambda (" ++
-    unwords args ++    ") " ++ show b ++ ")"
-  show (NaryLambda _ s a) = "(lambda " ++ s ++ " " ++ show a ++ ")"
+  show (Lambda _ arg b) =
+    "(lambda (" ++ arg ++ ") " ++ show b ++ ")"
   show (Intrinsic _) = "(intrinsic)"
   show (Symbol s) = '\'' : s
   show (Value.Bool True) = "#t"
   show (Value.Bool False) = "#f"
-  show (String s) = '\"' : s ++ "\""
+  show (Char c) = [c]
 
 instance Eq Value where
   (Value.Number a) == (Value.Number b) = a == b
@@ -73,11 +76,11 @@ instance Typeof Value where
   typeof (Value.Number _) = "number"
   typeof (ValueList _) = "list"
   typeof (Lambda _ _ _) = "lambda"
-  typeof (NaryLambda _ _ _) = "lambda"
   typeof Nil = "nil"
   typeof (Symbol _) = "symbol"
   typeof (Intrinsic _ ) = "intrinsic"
   typeof (Value.Bool _) = "boolean"
+  typeof (Char _) = "char"
 
 thruthy :: Value -> Bool
 thruthy (Value.Bool False) = False

@@ -7,9 +7,11 @@ import Data.Map.Strict hiding (foldl, filter, map)
 import Data.Either (rights)
 import Control.Monad.Trans.Except
 import Data.List (intersperse)
+import Control.Monad.IO.Class (liftIO)
 
 import Parser
 import Value
+import StandardContext
 
 trace :: String -> Result -> Result
 trace s = withExceptT (++ ("\ncalled from " ++ s))
@@ -20,7 +22,7 @@ eval s a = case a of
 
   Parser.Bool b -> return (s, Value.Bool b)
 
-  StringLiteral l -> return (s, String l)
+  StringLiteral l -> return (s, ValueList $ map Char l)
 
   Identifier i -> return (s, maybe Nil id $ lookup i s)
 
@@ -40,9 +42,11 @@ eval s a = case a of
     case args of
       -- TODO: Propagate errors from getName
       List is -> 
-        let names = map getName is
-         in return $ (s, Lambda s (rights names) body)
-      Identifier i -> return $ (s, NaryLambda s i body)
+        let (h : t) = rights $ map getName is
+         in return (s,
+              Lambda s h $ foldl
+                (\a n -> List [Identifier "lambda", List [Identifier n], a])
+                body t)
       v -> throwE $ "Expected List or Identifier, but received " ++ show v
 
   List [Identifier "setq", Identifier name, expr] ->
@@ -51,11 +55,14 @@ eval s a = case a of
   List [Identifier "defun", name, args, body] ->
     eval s $ List [Identifier "setq", name, List $ [Identifier "lambda", args, body]]
 
+  List [Identifier "defun-rec", name, List args, body] ->
+    eval s $ List [Identifier "setq", name, List [Identifier "Y", List [Identifier "lambda", List [name], foldl (\ac arg -> List [Identifier "lambda", List [arg], ac]) body (reverse args)]]]
+
   List [Identifier "if", cond, t, e] -> do
-    (_, c) <- eval s cond
+    (_, c) <- trace (show cond) $ eval s cond
     if thruthy c
-       then eval s t
-       else eval s e
+       then trace (show t) $ eval s t
+       else trace (show e) $ eval s e
 
   List [Identifier "let", List bindings, expr] -> do
     bs <- foldl (\a b -> case b of
@@ -75,28 +82,28 @@ eval s a = case a of
     let wildcards = filter isWildcard atoms
      in if length wildcards > 0
        then
-         let (_, body) = foldl (\(n, r) a ->
+         let (_, reverse -> body) = foldl (\(n, r) a ->
                if isWildcard a
                  then (n + 1, (Identifier $ "$" ++ show n) : r)
                  else (n, a : r)) (0, []) atoms
                    in eval s $ List [
                         Identifier "lambda",
-                        List $ [Identifier $ "$" ++ show n | n <- [1 .. length wildcards]],
+                        List $ [Identifier $ "$" ++ show n | n <- [0 .. length wildcards - 1]],
                         List $ f : body
                       ]
        else do
          -- TODO: Propagate errors from `traverse (eval s) atoms`
          let eval' = (trace (show $ List (f : atoms)) .) . eval
-         (_, args) <- unzip <$> traverse (eval' s) atoms
          (_, r) <- eval' s f
          case r of
-           (Lambda c ps b) ->
-             let params = fromList $ zip ps args
-              in eval' (unions [params, s, c]) b
-           (Intrinsic f) -> f args >>= return . (,) s
-           (NaryLambda c p b) ->
-             let s' = insert p (ValueList args) $ c <> s
-              in eval' s' b
+           l@(Lambda _ _ _) ->
+             (,) s <$> foldl (\l at -> do
+               (Lambda c p ac) <- l
+               (_, arg) <- eval s at
+               snd <$> eval (singleton p arg <> c) ac) (pure l) atoms
+           (Intrinsic f') -> do
+             (_, args) <- unzip <$> traverse (eval' s) atoms
+             (,) s <$> f' args
            v -> throwE $ "Called " ++ show f ++ ", but it is not a function, but " ++ typeof v
 
   v -> throwE $ "Unknowing sequence of nodes: " ++ show v
