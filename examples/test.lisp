@@ -3,6 +3,9 @@
 (setq zerop (= 0))
 
 (defun id (x) x)
+(setq ∅ '())
+
+(setq : cons₁)
 
 (defun pair (a b) '(a b))
 (defun fst (p) (car p))
@@ -13,24 +16,21 @@
     (incf (length (cdr l)))))
 
 (defun-rec map (f l)
-  (if (null l)
-    '()
+  (if (null l) ∅
     (cons₁ (f (car l)) (map f (cdr l)))))
 
 (defun-rec filter (f l)
-  (if (null l)
-    '()
+  (if (null l) ∅
     (if (f (car l))
       (cons₁ (car l) (filter f (cdr l)))
       (filter f (cdr l)))))
 
 (defun-rec take (n l)
-  (if (∨ (null l) (zerop n))
-    '()
+  (if (∨ (null l) (zerop n)) ∅
     (cons₁ (car l) (take (decf n) (cdr l)))))
 
 (defun-rec drop (n l)
-  (if (null l) '()
+  (if (null l) ∅
     (if (zerop n)
       l
       (drop (decf n) (cdr l)))))
@@ -47,8 +47,7 @@
     (last (cdr l))))
 
 (defun-rec init (l)
-  (if (= 1 (length l))
-    '()
+  (if (= 1 (length l)) ∅
     (cons₁ (car l) (init (cdr l)))))
 
 (defun-rec foldr (f s l)
@@ -61,17 +60,13 @@
     (f (foldl f s (cdr l)) (car l))))
 
 (defun-rec append (a b)
-  (if (null a)
-    b
+  (if (null a) b
     (: (car a) (append (cdr a) b))))
 (setq ++ append)
 
 (defun-rec reverse (l)
-  (if (null l)
-    '()
+  (if (null l) ∅
     (++ (reverse (cdr l)) '((car l)))))
-
-(setq : cons₁)
 
 (defun-rec intersperse (d l)
   (if (= 1 (length l))
@@ -93,8 +88,7 @@
 (setq ∨ or)
 
 (defun-rec zip (a b)
-  (if (or (null a) (null b))
-    '()
+  (if (or (null a) (null b)) ∅
     (:
       (pair (car a) (car b))
       (zip (cdr a) (cdr b)))))
@@ -117,8 +111,7 @@
 (setq !! lookup)
 
 (defun-rec union (a b)
-  (if (null b)
-    a
+  (if (null b) a
     (let ((c (car b)))
       (if (= nil (lookup (fst c) a))
         (union (: c a) (cdr b))
@@ -128,8 +121,7 @@
 (defun insert (p m) (if (= nil (!! (fst p) m)) (: p m) m))
 
 (defun-rec difference (a b)
-  (if (null a)
-    '()
+  (if (null a) ∅
     (if (= nil (lookup (fst (car a)) b))
       (: (car a) (difference (cdr a) b))
       (difference (cdr a) b))))

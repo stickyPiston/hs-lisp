@@ -23,7 +23,9 @@ eval s a = case a of
 
   Parser.Bool b -> return (s, Value.Bool b)
 
-  StringLiteral l -> return (s, ValueList $ map Char l)
+  StringLiteral l -> return (s, ValueList $ map Value.Char l)
+
+  Parser.Char c -> return (s, Value.Char c)
 
   Identifier i -> return (s, maybe Nil id $ lookup i s)
 

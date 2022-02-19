@@ -2,6 +2,7 @@ module Value where
 
 import Control.Monad.Trans.Except (ExceptT)
 import Data.Map.Strict (Map)
+import System.IO (Handle)
 
 import Parser
 
@@ -16,6 +17,7 @@ data Value
   | Symbol String
   | ValueList [Value]
   | Nil
+  | Handle Handle
 
 type Context = Map String Value
 
@@ -34,15 +36,16 @@ instance Show Atom where
   show (Parser.Bool True) = "#t"
   show (Parser.Bool False) = "#f"
   show Wildcard = "_"
+  show (Parser.Char c) = [c]
 
 isChar :: Value -> Bool
-isChar (Char _) = True
+isChar (Value.Char _) = True
 isChar _ = False
 
 instance Show Value where
   show (Value.Number a) = show a
   show (ValueList a)
-    | all isChar a = map (\(Char c) -> c) a
+    | all isChar a = map (\(Value.Char c) -> c) a
     | otherwise = "(" ++ (unwords $ map show a) ++ ")"
   show Nil = "nil"
   show (Lambda _ arg b) =
@@ -51,7 +54,7 @@ instance Show Value where
   show (Symbol s) = '\'' : s
   show (Value.Bool True) = "#t"
   show (Value.Bool False) = "#f"
-  show (Char c) = [c]
+  show (Value.Char c) = [c]
 
 instance Eq Value where
   (Value.Number a) == (Value.Number b) = a == b
@@ -71,6 +74,7 @@ instance Typeof Atom where
   typeof (Quote _) = "quoted value"
   typeof (Parser.Bool _) = "boolean"
   typeof Wildcard = "wildcard"
+  typeof (Parser.Char _) = "character"
 
 instance Typeof Value where
   typeof (Value.Number _) = "number"
@@ -80,7 +84,7 @@ instance Typeof Value where
   typeof (Symbol _) = "symbol"
   typeof (Intrinsic _ ) = "intrinsic"
   typeof (Value.Bool _) = "boolean"
-  typeof (Char _) = "char"
+  typeof (Value.Char _) = "char"
 
 thruthy :: Value -> Bool
 thruthy (Value.Bool False) = False

@@ -13,6 +13,7 @@ data Atom
   | Bool Bool
   | Wildcard
   | Comment String
+  | Char Char
 
 spaces :: Parser ()
 spaces = skipMany1 space
@@ -23,13 +24,29 @@ symbol = noneOf "\"\'()0123456789\n\t "
 integer :: Parser Atom
 integer = (Number . read) <$> (many1 digit)
 
+char' :: Parser Char
+char' = 
+  (try $ do
+    c <- char '\\' >> (oneOf "nt0rab'\\\"")
+    return $ case c of
+      'n' -> '\n'
+      't' -> '\t'
+      '0' -> '\0'
+      'r' -> '\r'
+      'a' -> '\a'
+      'b' -> '\b'
+      '\'' -> '\''
+      '"' -> '"'
+      '\\' -> '\\') <|> noneOf "\""
+
 stringLiteral :: Parser Atom
-stringLiteral = StringLiteral <$> (char '"' *> many (noneOf "\"") <* char '"')
+stringLiteral = StringLiteral <$>
+  (char '"' *> many char' <* char '"')
 
 identifier :: Parser Atom
 identifier = do
-  first <- letter <|> symbol
-  rest <- many (letter <|> symbol <|> digit <|> char '\'')
+  first <- symbol
+  rest <- many (symbol <|> char '\'')
   let atom = first : rest
    in return $
       case atom of
@@ -39,7 +56,7 @@ identifier = do
         _ -> Identifier atom
 
 list :: Parser Atom
-list = List <$> (char '(' *> atom `sepBy` spaces <* char ')')
+list = List <$> (char '(' *> skipMany space *> atom `sepBy` spaces <* skipMany space <* char ')')
 
 quote :: Parser Atom
 quote = Quote <$> (char '\'' *> atom)
