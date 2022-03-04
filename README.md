@@ -9,17 +9,19 @@ This lisp has
 - Unicode name support
 - Definition of recursive functions
 - Wildcards (like `(- _ 1) ≡ (λ (x) (- x 1))`)
+- Functions for I/O (`read`, `write`, `open`, `close`)
 - Still lots of bugs
 
 ## Example
 
 ```lisp
-(defun-rec foldl (f s l)
-  (if (null (cdr l))
+(define ∅? null)
+(define-rec (foldl f s l)
+  (if (∅? (cdr l))
     (f s (car l))
     (f (foldl f s (cdr l)) (car l))))
-(defun ∘ (f g) (λ (x) (f (g x))))
-(setq ->> (foldl ∘ (λ (x) x)))
+(define (∘ f g) (λ (x) (f (g x))))
+(define ->> (foldl ∘ (λ (x) x)))
 (print ((->> '((+ 1) (+ 3) (- _ 4) (* 2))) 10))
 ; prints 20
 ```
