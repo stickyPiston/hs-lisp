@@ -2,3 +2,5 @@ dist*
 *.swp
 ._*
 .DS_Store
+output.txt
+inference-pseudo.txt

@@ -4,9 +4,7 @@ module Evaluator where
 
 import Prelude hiding (lookup)
 import Data.Map.Strict hiding (foldl, filter, map)
-import Data.Either (rights)
 import Control.Monad.Trans.Except
-import Data.List (intersperse)
 import Control.Monad.IO.Class (liftIO)
 import Text.ParserCombinators.Parsec (parse)
 
@@ -14,118 +12,75 @@ import StandardContext
 import Parser
 import Value
 
-trace :: String -> Result -> Result
-trace s = withExceptT (++ ("\ncalled from " ++ s))
-
 eval :: Context -> Atom -> Result
 eval s a = case a of
-  Identifier "nil" -> return (s, Nil)
+  -- Literals:
 
   Parser.Bool b -> return (s, Value.Bool b)
-
-  StringLiteral l -> return (s, ValueList $ map Value.Char l)
-
-  Parser.Char c -> return (s, Value.Char c)
-
-  Identifier i -> return (s, maybe Nil id $ lookup i s)
-
+  StringLiteral l -> return (s, Value.List $ map Value.Char l)
+  Identifier i -> return (s, maybe nil id $ lookup i s)
   Parser.Number n -> return (s, Value.Number n)
 
-  Quote (List xs) ->
+  -- Base language constructs:
+
+  Quote (Parser.List xs) ->
     traverse (eval s) xs >>=
-      return . (,) s . ValueList . map snd
+      return . (,) s . Value.List . map snd
   Quote n@(Parser.Number _) -> eval s n
   Quote (Identifier i) -> return (s, Symbol i)
   Quote v -> throwE $ "Quoting " ++ show v ++ " is not allowed"
 
-  List [Identifier "λ", args, body] ->
-    eval s $ List [Identifier "lambda", args, body]
+  Abst p b -> return (s, Lambda s p b)
 
-  List [Identifier "lambda", args, body] ->
-    case args of
-      -- TODO: Propagate errors from getName
-      List is -> 
-        let (h : t) = rights $ map getName is
-         in return (s,
-              Lambda s h $ foldl
-                (\a n -> List [Identifier "lambda", List [Identifier n], a])
-                body t)
-      v -> throwE $ "Expected List or Identifier, but received " ++ show v
+  Define rec name expr ->
+    if rec
+       then
+        eval s $ Define False name $
+          Appl (Identifier "Y") $
+            Abst name expr
+       else do
+        (_, v) <- eval s expr
+        return (alter (maybe (Just v) =<< const) name s, nil)
 
-  List [Identifier "setq", Identifier name, expr] ->
-    eval s expr >>= \(_, v) -> return (alter (maybe (Just v) =<< const) name s, Nil)
+  Let nm val expr -> do
+    (_, val') <- eval s val
+    eval (singleton nm val' <> s) expr
 
-  List [Identifier "defun", name, args, body] ->
-    eval s $ List [Identifier "setq", name, List $ [Identifier "lambda", args, body]]
+  Appl f Wildcard ->
+    return (s, Lambda s "$2" $
+      Abst "$1" $
+        Appl (Appl f (Identifier "$1")) (Identifier "$2"))
 
-  List [Identifier "defun-rec", name, List args, body] ->
-    eval s $ List [Identifier "setq", name,
-      List [Identifier "Y",
-        List [Identifier "lambda", List [name],
-          foldl (\ac arg ->
-            List [Identifier "lambda", List [arg], ac])
-              body (reverse args)]]]
+  Appl f a -> do
+    (_, rf) <- eval s f
+    (_, ra) <- eval s a
+    case rf of
+      (Lambda c p b) -> (,) s . snd <$> eval (singleton p ra <> c) b
+      (Intrinsic i) -> (,) s <$> i [ra]
+      v -> throwE $ "Called " ++ show (Appl f a) ++ ", but it is not a function"
 
-  List [Identifier "import", StringLiteral path] -> do
+  -- Keywords:
+
+  Parser.List [Identifier "import", StringLiteral path] -> do
     ((prependedStdlib ++) -> source) <- liftIO $ readFile path
     case parse file path source of
       Right (filterComments -> as) ->
         foldl (\c a -> fst <$> (flip eval a =<< c))
-          (pure standardContext) as >>= return . flip (,) Nil . (s <>)
+          (pure standardContext) as >>= return . flip (,) nil . (s <>)
       Left e -> throwE $ show e
 
-  List [Identifier "if", cond, t, e] -> do
+  Parser.List [Identifier "if", cond, t, e] -> do
     (_, c) <- trace (show cond) $ eval s cond
     if thruthy c
        then trace (show t) $ eval s t
        else trace (show e) $ eval s e
 
-  List [Identifier "let", List bindings, expr] -> do
-    bs <- foldl (\a b -> case b of
-      List [Identifier i, e] -> do
-        (s', es) <- a
-        (s'', r) <- eval s' e
-        return (singleton i r <> s'', es)
-      v -> do
-        (s', es) <- a
-        return (s, ("Expected let binding, but received " ++ typeof v) : es))
-        (pure (s, [])) bindings
-    if length (snd bs) > 0
-       then throwE . concat . intersperse "\n" $ snd bs
-       else eval (fst bs) expr
+  -- No match:
 
-  List (f : atoms) ->
-    let wildcards = filter isWildcard atoms
-     in if length wildcards > 0
-       then
-         let (_, reverse -> body) = foldl (\(n, r) a ->
-               if isWildcard a
-                 then (n + 1, (Identifier $ "$" ++ show n) : r)
-                 else (n, a : r)) (0, []) atoms
-                   in eval s $ List [
-                        Identifier "lambda",
-                        List $ [Identifier $ "$" ++ show n | n <- [0 .. length wildcards - 1]],
-                        List $ f : body
-                      ]
-       else do
-         -- TODO: Propagate errors from `traverse (eval s) atoms`
-         let eval' = (trace (show $ List (f : atoms)) .) . eval
-         (_, r) <- eval' s f
-         case r of
-           l@(Lambda _ _ _) ->
-             (,) s <$> foldl (\l at -> do
-               (Lambda c p ac) <- l
-               (_, arg) <- eval s at
-               snd <$> eval (singleton p arg <> c) ac) (pure l) atoms
-           (Intrinsic f') -> do
-             (_, args) <- unzip <$> traverse (eval' s) atoms
-             (,) s <$> f' args
-           v -> throwE $ "Called " ++ show f ++ ", but it is not a function, but " ++ typeof v
+  v -> throwE $ "Unknowing sequence of nodes: (" ++ typeof v ++ ")" ++ " " ++ show v
 
-  v -> throwE $ "Unknowing sequence of nodes: " ++ show v
+nil :: Value
+nil = Value.List []
 
-  where
-    isWildcard Wildcard = True
-    isWildcard _        = False
-    getName (Identifier n) = Right n
-    getName v              = Left $ "Expected Identifier, but received " ++ show v
+trace :: String -> Result -> Result
+trace s = withExceptT (++ ("\ncalled from " ++ s))

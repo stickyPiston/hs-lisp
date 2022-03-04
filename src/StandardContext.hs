@@ -14,11 +14,10 @@ import Parser hiding (Number, Bool, Char)
 import Value
 
 prependedStdlib :: String
-prependedStdlib = "(defun Y (f) ((λ (x) (f (λ (y) ((x x) y)))) (λ (x) (f (λ (y) ((x x) y))))))\n\n"
+prependedStdlib = "(define (Y f) ((λ (x) (f (λ (y) ((x x) y)))) (λ (x) (f (λ (y) ((x x) y))))))\n\n"
 
-curryIntrinsic :: Value -> String -> Value
-curryIntrinsic e nm =
-  Lambda ((singleton "a" $ e) <> standardContext) "b" (List [Identifier nm, Identifier "a", Identifier "b"])
+curryIntrinsic :: Value -> (Value -> Value -> ExceptT String IO Value) -> Value
+curryIntrinsic e f = Intrinsic $ \[v] -> f e v
 
 standardContext :: Context
 standardContext = fromList [
@@ -27,59 +26,58 @@ standardContext = fromList [
     ("*", createBinop "*" (*)),
     ("/", createBinop "/" div),
     ("null", Intrinsic $ \case
-      [ValueList l] -> return . Value.Bool $ null l
+      [Value.List l] -> return . Value.Bool $ null l
       [v] -> throwE $ "Expected List, but received " ++ show v
       v -> throwE $ "Expected one argument, but received " ++ show (length v)),
-    ("cons₁", Intrinsic $ \case
-      [e, ValueList l] -> return . ValueList $ e : l
+    ("cons", Intrinsic $ \case
+      [e] -> return $ curryIntrinsic e
+        (\e (Value.List l) -> return . Value.List $ e : l)
       [_, l] -> throwE $ "Expected List, but received " ++ show l
-      [e] -> return $ curryIntrinsic e "cons₁"
       v -> throwE $ "Expected 2 arguments, but received " ++ show (length v)),
     ("print", Intrinsic $ \case
       [v] -> (liftIO . putStrLn . show $ v) >> pure v
       v -> throwE $ "Expected 1 argument, but received " ++ show (length v)),
     ("read", Intrinsic $ \case
-      [Handle handle, Number n] ->
-        ValueList <$> map (Char) <$> (replicateM n $ liftIO (hGetChar handle))
-      [Handle handle] -> return $ curryIntrinsic (Handle handle) "read"
+      [Number n] -> return $ curryIntrinsic (Number n)
+        (\(Number n) (Handle handle) ->
+          Value.List <$> map (Char) <$> (replicateM n $ liftIO (hGetChar handle)))
       v -> throwE $ "Expected 2 arguments, but received " ++ show (length v)),
     ("write", Intrinsic $ \case
-      [ValueList l, Handle handle] ->
-        (forM_ l $ \case
-          (Char c) -> liftIO $ hPutChar handle c
-          v -> liftIO $ putStrLn $ typeof v) >> pure (Handle handle)
-      [ValueList l] -> return $ curryIntrinsic (ValueList l) "write"
+      [Value.List l] -> return $ curryIntrinsic (Value.List l)
+        (\(Value.List l) (Handle handle) ->
+          (forM_ l $ \case
+            (Char c) -> liftIO $ hPutChar handle c
+            v -> liftIO $ putStrLn $ typeof v) >> pure (Handle handle))
       v -> throwE $ "Expected 2 arguments, but received " ++ show (length v)),
     ("open", Intrinsic $ \case
-      [Symbol m, ValueList s@(Char _ : _)] -> do
-        handle <- liftIO $ openFile (map (\(Char c) -> c) s) $
-          case m of
-            "read" -> ReadMode
-            "write" -> WriteMode
-            "append" -> AppendMode
-            "readwrite" -> ReadWriteMode
-        return (Handle handle)
-      [Symbol m] ->
-        return $ curryIntrinsic (Symbol m) "open"
+      [Symbol m] -> return $ curryIntrinsic (Symbol m)
+        (\(Symbol m) (Value.List s@(Char _ : _)) -> do
+          handle <- liftIO $ openFile (map (\(Char c) -> c) s) $
+            case m of
+              "read" -> ReadMode
+              "write" -> WriteMode
+              "append" -> AppendMode
+              "readwrite" -> ReadWriteMode
+          return (Handle handle))
       v -> throwE $ "Expected 2 arguments, but received " ++ show (length v)),
     ("close", Intrinsic $ \case
-      [Handle h] -> liftIO $ hClose h >> pure Nil
+      [Handle h] -> liftIO $ hClose h >> pure (Value.List [])
       v -> throwE $ "Expected 1 argument, but received " ++ show (length v)),
     ("car", Intrinsic $ \case
-      [ValueList l] -> return $ head l
+      [Value.List l] -> return $ head l
       [v] -> throwE $ "Expected List, but received " ++ show v
       v -> throwE $ "Expected 1 argument, but received " ++ show (length v)),
     ("cdr", Intrinsic $ \case
-      [ValueList l] -> return . ValueList $ tail l
+      [Value.List l] -> return . Value.List $ tail l
       [v] -> throwE $ "Expected List, but received " ++ show v
       v -> throwE $ "Expected 1 argument, but received " ++ show (length v)),
     ("=", Intrinsic $ \case
-      [e1, e2] -> return . Bool $ e1 == e2
-      [e] -> return $ curryIntrinsic e "="
+      [e] -> return $ curryIntrinsic e
+        (\e1 e2 -> return . Bool $ e1 == e2)
       v -> throwE $ "Expected 2 arguments, but received " ++ show (length v)),
     (">", Intrinsic $ \case
-      [Number n1, Number n2] -> return . Bool $ n1 > n2
-      [Number n] -> return $ curryIntrinsic (Number n) ">"
+      [Number n] -> return $ curryIntrinsic (Number n)
+        (\(Number n1) (Number n2) -> return . Bool $ n1 > n2)
       v -> throwE $ "Expected 2 arguments, but received " ++ show (length v)),
     ("typeof", Intrinsic $ \case
       [v] -> return $ Symbol (typeof v)
@@ -91,6 +89,8 @@ standardContext = fromList [
   where 
     createBinop :: String -> (Int -> Int -> Int) -> Value
     createBinop nm f = Intrinsic $ \case
-      [Number n1, Number n2] -> return . Number $ n1 `f` n2
-      [Number n] -> return $ curryIntrinsic (Number n) nm
-      v -> throwE $ "Expected 2 Numbers, but received " ++ show v
+      [Number n] -> return $ curryIntrinsic (Number n)
+        (\e1 e2 -> case (e1, e2) of
+                     (Number n1, Number n2) -> return . Number $ n1 `f` n2
+                     _ -> throwE $ "Expected two Numbers, but received " ++ show e1 ++ " and " ++ show e2)
+      v -> throwE $ "Expected a Number, but received " ++ show v

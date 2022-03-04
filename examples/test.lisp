@@ -1,145 +1,153 @@
-(setq incf (+ 1))
-(setq decf (- _ 1))
-(setq zerop (= 0))
+(define (id x) x)
+(define ∅ '())
+(define ∅? null)
+(define zero? (= 0))
 
-(defun id (x) x)
-(setq ∅ '())
+(define : cons)
 
-(setq : cons₁)
+(define (pair a b) '(a b))
+(define (fst p) (car p))
+(define (snd p) (car (cdr p)))
 
-(defun pair (a b) '(a b))
-(defun fst (p) (car p))
-(defun snd (p) (car (cdr p)))
+(define-rec (length l)
+  (if (∅? l) 0
+    (+ 1 (length (cdr l)))))
 
-(defun-rec length (l)
-  (if (null l) 0
-    (incf (length (cdr l)))))
+(define-rec (map f l)
+  (if (∅? l) ∅
+    (: (f (car l)) (map f (cdr l)))))
 
-(defun-rec map (f l)
-  (if (null l) ∅
-    (cons₁ (f (car l)) (map f (cdr l)))))
-
-(defun-rec filter (f l)
-  (if (null l) ∅
+(define-rec (filter f l)
+  (if (∅? l) ∅
     (if (f (car l))
-      (cons₁ (car l) (filter f (cdr l)))
+      (: (car l) (filter f (cdr l)))
       (filter f (cdr l)))))
 
-(defun-rec take (n l)
-  (if (∨ (null l) (zerop n)) ∅
-    (cons₁ (car l) (take (decf n) (cdr l)))))
+(define-rec (take n l)
+  (if (∨ (∅? l) (zero? n)) ∅
+    (: (car l) (take (- n 1) (cdr l)))))
 
-(defun-rec drop (n l)
-  (if (null l) ∅
-    (if (zerop n)
+(define-rec (drop n l)
+  (if (∅? l) ∅
+    (if (zero? n)
       l
-      (drop (decf n) (cdr l)))))
+      (drop (- n 1) (cdr l)))))
 
-(defun-rec index (n l)
-  (if (zerop n)
+(define-rec (index n l)
+  (if (zero? n)
     (car l)
-    (index (decf n) (cdr l))))
-(setq ! index)
+    (index (- n 1) (cdr l))))
+(define ! index)
 
-(defun-rec last (l)
+(define-rec (last l)
   (if (= 1 (length l))
     (car l)
     (last (cdr l))))
 
-(defun-rec init (l)
+(define-rec (init l)
   (if (= 1 (length l)) ∅
-    (cons₁ (car l) (init (cdr l)))))
+    (: (car l) (init (cdr l)))))
 
-(defun-rec foldr (f s l)
-  (if (null l) s
+(define-rec (foldr f s l)
+  (if (∅? l) s
     (f (car l) (foldr f s (cdr l)))))
 
-(defun-rec foldl (f s l)
-  (if (null (cdr l))
+(define-rec (foldl f s l)
+  (if (∅? (cdr l))
     (f s (car l))
     (f (foldl f s (cdr l)) (car l))))
 
-(defun-rec append (a b)
-  (if (null a) b
+(define-rec (append a b)
+  (if (∅? a) b
     (: (car a) (append (cdr a) b))))
-(setq ++ append)
+(define ++ append)
 
-(defun-rec reverse (l)
-  (if (null l) ∅
+(define-rec (reverse l)
+  (if (∅? l) ∅
     (++ (reverse (cdr l)) '((car l)))))
 
-(defun-rec intersperse (d l)
+(define-rec (intersperse d l)
   (if (= 1 (length l))
     '((car l))
-    (: (car l) d (intersperse d (cdr l)))))
+    (: (car l) (: d (intersperse d (cdr l))))))
 
-(setq sum (foldl + 0))
-(setq Σ sum)
+; Monoids
+(define sum (foldl + 0))
+(define Σ sum)
+(define product (foldl * 1))
+(define Π product)
 
-(defun not (a) (if a #f #t))
-(setq ¬ not)
+(define (not a) (if a #f #t))
+(define ¬ not)
 
-(defun and (a b)
+(define (and a b)
   (if a (if b #t #f) #f))
-(setq ∧ and)
+(define ∧ and)
 
-(defun or (a b)
+(define (or a b)
   (if a #t (if b #t #f)))
-(setq ∨ or)
+(define ∨ or)
 
-(defun-rec zip (a b)
-  (if (or (null a) (null b)) ∅
+(define-rec (zip a b)
+  (if (∨ (∅? a) (∅? b)) ∅
     (:
       (pair (car a) (car b))
       (zip (cdr a) (cdr b)))))
 
-(defun-rec find (p l)
-  (if (null l)
-    nil
+(define-rec (find p l)
+  (if (∅? l) ∅
     (if (p (car l))
       (car l)
       (find p (cdr l)))))
-(defun elem (e l) (¬ (= nil (find (= e) l))))
-(setq ∈ elem)
+(define (elem e l) (¬ (= ∅ (find (= e) l))))
+(define ∈ elem)
 
-(defun-rec lookup (k m)
-  (if (null m) nil
+(define-rec (lookup k m)
+  (if (∅? m) ∅
     (let ((p (car m)))
       (if (= (fst p) k)
         (snd p)
         (lookup k (cdr m))))))
-(setq !! lookup)
+(define !! lookup)
 
-(defun-rec union (a b)
-  (if (null b) a
+(define-rec (union a b)
+  (if (∅? b) a
     (let ((c (car b)))
-      (if (= nil (lookup (fst c) a))
+      (if (= ∅ (!! (fst c) a))
         (union (: c a) (cdr b))
         (union a (cdr b))))))
-(setq ∪ union)
+(define ∪ union)
 
-(defun insert (p m) (if (= nil (!! (fst p) m)) (: p m) m))
+(define (insert p m) (if (= ∅ (!! (fst p) m)) (: p m) m))
 
-(defun-rec difference (a b)
-  (if (null a) ∅
-    (if (= nil (lookup (fst (car a)) b))
+(define-rec (difference a b)
+  (if (∅? a) ∅
+    (if (= ∅ (!! (fst (car a)) b))
       (: (car a) (difference (cdr a) b))
       (difference (cdr a) b))))
+(define \ difference)
 
-(setq keys (map fst))
-(setq values (map snd))
+(define keys (map fst))
+(define values (map snd))
 
-(print (∪
+(define (const a b) a)
+(define-rec (printₙ xs)
+  (if (∅? xs) ∅
+    (printₙ (const (cdr xs)
+      (print (car xs))))))
+
+(printₙ '("Union test: " (∪
          '((pair 'a 10) (pair 'b 20))
-         '((pair 'b 30) (pair 'c 30))))
-(print (difference
+         '((pair 'b 30) (pair 'c 30))) ""))
+(printₙ '("Difference test: " (\
          '((pair 'a 10) (pair 'b 20))
-         '((pair 'b 30) (pair 'c 30))))
-(print (keys '((pair 'a 10) (pair 'b 20))))
-(print (values '((pair 'a 10) (pair 'b 20))))
-(setq m '((pair 'a 10) (pair 'b 20)))
-(print (zip (keys m) (values m)))
-(print (snd (pair 10 20)))
-(print (! 3 '(1 2 3 4 5 6)))
-(defun add₅ (a b c d e) (sum '(a b c d e)))
-(print ((add₅ 1 _ 3 _ 5) 10 20))
+         '((pair 'b 30) (pair 'c 30))) ""))
+(printₙ '("Keys test:" (keys '((pair 'a 10) (pair 'b 20))) ""))
+(printₙ '("Values test:" (values '((pair 'a 10) (pair 'b 20))) ""))
+(define m '((pair 'a 10) (pair 'b 20)))
+(printₙ '("Zip test:" (zip (keys m) (values m)) ""))
+(printₙ '("Snd test:" (snd (pair 10 20)) ""))
+(printₙ '("! test:" (! 3 '(1 2 3 4 5 6)) ""))
+(printₙ '("∈ test:" (∈ 'c (keys m)) ""))
+(define (add₅ a b c d e) (sum '(a b c d e)))
+(printₙ '("Wildcard test:" ((add₅ 1 _ 3 _ 5) 10 20) ""))
