@@ -63,7 +63,7 @@ instance Typeof Expression where
 
 instance Typeof Statement where
   typeof (Define _ _ _) = "Definition"
-  typeof (Import _ _) = "Definition"
+  typeof (Import _ _) = "Import"
 
 instance Typeof Value where
   typeof (Value.Number _) = "number"
@@ -73,6 +73,7 @@ instance Typeof Value where
   typeof (Intrinsic _ ) = "intrinsic"
   typeof (Value.Bool _) = "boolean"
   typeof (Value.Char _) = "char"
+  typeof (Handle _) = "handle"
 
 thruthy :: Value -> Bool
 thruthy (Value.Bool False) = False

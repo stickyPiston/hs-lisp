@@ -9,6 +9,7 @@ import Data.Either (lefts, isLeft, rights)
 import Control.Monad.IO.Class (liftIO)
 import System.IO
 import Control.Monad (replicateM, forM_)
+import Data.Char (ord, chr)
 
 import Parser hiding (Number, Bool, Char)
 import Value
@@ -21,10 +22,11 @@ curryIntrinsic e f = Intrinsic $ \[v] -> f e v
 
 standardContext :: Context
 standardContext = fromList [
-    ("+", createBinop "+" (+)),
-    ("-", createBinop "-" (-)),
-    ("*", createBinop "*" (*)),
-    ("/", createBinop "/" div),
+    ("+", createBinop (+)),
+    ("-", createBinop (-)),
+    ("*", createBinop (*)),
+    ("/", createBinop div),
+    ("%", createBinop mod),
     ("null", Intrinsic $ \case
       [Value.List l] -> return . Value.Bool $ null l
       [v] -> throwE $ "Expected List, but received " ++ show v
@@ -85,13 +87,19 @@ standardContext = fromList [
     ("stdout", Handle stdout),
     ("stderr", Handle stderr),
     ("stdin",  Handle stdin),
-    ("num->string", Intrinsic $ \case
-      [Number n] -> return $ Value.List $ map Char $ show n
-      [v] -> throwE $ "Not a number!")
+    ("to-ascii", Intrinsic $ \case
+      [Value.List (Char c : _)] -> return . Number $ ord c
+      [v] -> throwE "Not a string"),
+    ("from-ascii", Intrinsic $ \case
+      [Number n] -> return $ Value.List [Char $ chr n]
+      [v] -> throwE "Not a string"),
+    ("sym->s", Intrinsic $ \case
+      [Symbol s] -> return $ Value.List $ map Char s
+      [v] -> throwE $ "Not a symbol")
   ]
   where 
-    createBinop :: String -> (Int -> Int -> Int) -> Value
-    createBinop nm f = Intrinsic $ \case
+    createBinop :: (Int -> Int -> Int) -> Value
+    createBinop f = Intrinsic $ \case
       [Number n] -> return $ curryIntrinsic (Number n)
         (\e1 e2 -> case (e1, e2) of
                      (Number n1, Number n2) -> return . Number $ n1 `f` n2

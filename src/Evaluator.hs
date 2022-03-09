@@ -66,9 +66,11 @@ eval s a = case a of
     (_, rf) <- eval s f
     (_, ra) <- eval s a
     case rf of
-      (Lambda c p b) -> (,) s . snd <$> eval (singleton p ra <> c) b
+      (Lambda c p b) -> (,) s . snd <$> eval (singleton p ra <> c <> s) b
       (Intrinsic i) -> (,) s <$> i [ra]
       v -> throwE $ "Called " ++ show (Appl f a) ++ ", but it is not a function"
+
+  Wildcard -> either (throwE . show) (eval s) $ parse abst "" "(λ (x) (λ (f) (f x)))"
 
   -- Keywords:
 
