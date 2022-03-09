@@ -53,9 +53,10 @@
     (f (car l) (foldr f s (cdr l)))))
 
 (define-rec (foldl f s l)
-  (if (∅? (cdr l))
-    (f s (car l))
-    (f (foldl f s (cdr l)) (car l))))
+  (if (∅? l) s
+    (if (∅? (cdr l))
+      (f s (car l))
+      (f (foldl f s (cdr l)) (car l)))))
 
 (define-rec (append a b)
   (if (∅? a) b
@@ -71,7 +72,6 @@
     '((car l))
     (: (car l) (: d (intersperse d (cdr l))))))
 
-; Monoids
 (define sum (foldl + 0))
 (define Σ sum)
 (define product (foldl * 1))
@@ -135,19 +135,3 @@
   (if (∅? xs) ∅
     (printₙ (const (cdr xs)
       (print (car xs))))))
-
-(printₙ '("Union test: " (∪
-         '((pair 'a 10) (pair 'b 20))
-         '((pair 'b 30) (pair 'c 30))) ""))
-(printₙ '("Difference test: " (\
-         '((pair 'a 10) (pair 'b 20))
-         '((pair 'b 30) (pair 'c 30))) ""))
-(printₙ '("Keys test:" (keys '((pair 'a 10) (pair 'b 20))) ""))
-(printₙ '("Values test:" (values '((pair 'a 10) (pair 'b 20))) ""))
-(define m '((pair 'a 10) (pair 'b 20)))
-(printₙ '("Zip test:" (zip (keys m) (values m)) ""))
-(printₙ '("Snd test:" (snd (pair 10 20)) ""))
-(printₙ '("! test:" (! 3 '(1 2 3 4 5 6)) ""))
-(printₙ '("∈ test:" (∈ 'c (keys m)) ""))
-(define (add₅ a b c d e) (sum '(a b c d e)))
-(printₙ '("Wildcard test:" ((add₅ 1 _ 3 _ 5) 10 20) ""))

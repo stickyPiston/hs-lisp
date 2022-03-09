@@ -14,14 +14,16 @@ import Data.List (foldl')
 
 main :: IO ()
 main = do
-  [path] <- getArgs
+  (path : args) <- getArgs
   ((prependedStdlib ++) -> source) <- readFile path
   case parse file path source of
-    Right (filterComments -> as) ->
-      foldl' (\s' a -> do
+    Right [] -> putStrLn "Could not parse file"
+    Right as -> do
+      s <- foldl' (\s' a -> do
           s <- s'
-          v <- runExceptT $ eval s a
+          v <- runExceptT $ evalTopLevel s a
           either ((>> pure empty) . putStrLn <$> ("\nRuntime Error: " ++))
             (return . fst) v
-         ) (pure standardContext) as >> pure ()
+         ) (pure standardContext) as
+      (runExceptT $ eval s (Appl (Identifier "main") $ Quote $ List $ map StringLiteral args)) >>= either (putStrLn . ("ERROR: " ++)) (const $ pure ())
     Left e -> putStrLn $ show e

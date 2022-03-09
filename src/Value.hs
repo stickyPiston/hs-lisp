@@ -11,7 +11,7 @@ type Result = ExceptT String IO (Context, Value)
 data Value
   = Number Int
   | Char Char
-  | Lambda Context String Atom
+  | Lambda Context String Expression
   | Intrinsic ([Value] -> ExceptT String IO Value)
   | Bool Bool
   | Symbol String
@@ -22,20 +22,6 @@ type Context = Map String Value
 
 class Typeof a where
   typeof :: a -> String
-
-instance Show Atom where
-  show (Parser.List as) = "(" ++ unwords (map show as) ++ ")"
-  show (Parser.Number n) = show n
-  show (Identifier i) = i
-  show (StringLiteral s) = "\"" ++ s ++ "\""
-  show (Quote a) = "'" ++ show a
-  show (Parser.Bool True) = "#t"
-  show (Parser.Bool False) = "#f"
-  show Wildcard = "_"
-  show (Abst p b) = "(λ (" ++ p ++ ") " ++ show b ++ ")" 
-  show (Appl f a) = "(" ++ show f ++ " " ++ show a ++ ")"
-  show (Define False n t) = "(define " ++ n ++ " " ++ show t ++ ")"  
-  show (Define True n t) = "(define-rec " ++ n ++ " " ++ show t ++ ")"  
 
 isChar :: Value -> Bool
 isChar (Value.Char _) = True
@@ -64,7 +50,7 @@ instance Eq Value where
   (Value.Bool a) == (Value.Bool b) = a == b
   _ == _ = False
 
-instance Typeof Atom where
+instance Typeof Expression where
   typeof (Parser.List _) = "list"
   typeof (Parser.Number _) = "number"
   typeof (Identifier _) = "identifier"
@@ -74,7 +60,10 @@ instance Typeof Atom where
   typeof Wildcard = "wildcard"
   typeof (Abst _ _) = "Abstraction"
   typeof (Appl _ _) = "Application"
+
+instance Typeof Statement where
   typeof (Define _ _ _) = "Definition"
+  typeof (Import _ _) = "Definition"
 
 instance Typeof Value where
   typeof (Value.Number _) = "number"

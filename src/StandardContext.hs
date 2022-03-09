@@ -84,7 +84,10 @@ standardContext = fromList [
       v -> throwE $ "Expected 1 argument, but received " ++ show (length v)),
     ("stdout", Handle stdout),
     ("stderr", Handle stderr),
-    ("stdin",  Handle stdin)
+    ("stdin",  Handle stdin),
+    ("num->string", Intrinsic $ \case
+      [Number n] -> return $ Value.List $ map Char $ show n
+      [v] -> throwE $ "Not a number!")
   ]
   where 
     createBinop :: String -> (Int -> Int -> Int) -> Value

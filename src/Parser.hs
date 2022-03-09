@@ -1,9 +1,50 @@
 module Parser where
 
+import System.IO.Unsafe
 import Control.Monad
 import Text.ParserCombinators.Parsec hiding (spaces)
 import Text.Parsec.Prim hiding (try)
 
+data Statement
+  = Import String String
+  | Define Bool String Expression
+  deriving Eq
+
+data Expression
+  = Number Int
+  | Identifier String
+  | StringLiteral String
+  | List [Expression]
+  | Quote Expression
+  | Bool Bool
+  | Wildcard
+  | Abst String Expression
+  | Appl Expression Expression
+  | Let String Expression Expression
+  | Comment String
+  | If Expression Expression Expression
+  deriving Eq
+
+instance Show Expression where
+  show (Parser.List as) = "(" ++ unwords (map show as) ++ ")"
+  show (Parser.Number n) = show n
+  show (Identifier i) = i
+  show (StringLiteral s) = "\"" ++ s ++ "\""
+  show (Quote a) = "'" ++ show a
+  show (Parser.Bool True) = "#t"
+  show (Parser.Bool False) = "#f"
+  show Wildcard = "_"
+  show (Abst p b) = "(λ (" ++ p ++ ") " ++ show b ++ ")" 
+  show (Appl f a) = "(" ++ show f ++ " " ++ show a ++ ")"
+  show (If c t e) = "(if " ++ show c ++ " " ++ show t ++ " " ++ show e ++ ")"
+
+instance Show Statement where
+  show (Define False n t) = "(define " ++ n ++ " " ++ show t ++ ")"  
+  show (Define True n t) = "(define-rec " ++ n ++ " " ++ show t ++ ")"  
+  show (Import "" path) = "(import " ++ path ++ ")"
+  show (Import as path) = "(import-as " ++ as ++ " " ++ path ++ ")"
+
+{-
 data Atom
   = Number Int
   | Identifier String
@@ -17,7 +58,7 @@ data Atom
   | Appl Atom Atom
   | Let String Atom Atom
   | Define Bool String Atom
-  deriving Eq
+  deriving Eq-}
 
 spaces :: Parser ()
 spaces = skipMany1 space
@@ -25,7 +66,7 @@ spaces = skipMany1 space
 symbol :: Parser Char
 symbol = noneOf "\"\'()0123456789\n\t "
 
-integer :: Parser Atom
+integer :: Parser Expression
 integer = (Number . read) <$> (many1 digit)
 
 char' :: Parser Char
@@ -43,11 +84,11 @@ char' =
       '"' -> '"'
       '\\' -> '\\') <|> noneOf "\""
 
-stringLiteral :: Parser Atom
+stringLiteral :: Parser Expression
 stringLiteral = StringLiteral <$>
   (char '"' *> many char' <* char '"')
 
-identifier :: Parser Atom
+identifier :: Parser Expression
 identifier = do
   first <- symbol
   rest <- many (symbol <|> char '\'' <|> digit)
@@ -59,59 +100,58 @@ identifier = do
         "_" -> Wildcard
         _ -> Identifier atom
 
-list :: Parser Atom
-list = List <$> (char '(' *> skipMany space *> atom `sepBy` spaces <* skipMany space <* char ')')
+list :: Parser Expression
+list = List <$> (char '(' *> expr `sepBy` spaces <* char ')')
 
-quote :: Parser Atom
+quote :: Parser Expression
 quote = Quote <$> (char '\'' *> (list <|> identifier <|> integer))
 
-comment :: Parser Atom
+comment :: Parser Expression
 comment = Comment <$> (char ';' >> manyTill (anyChar) (char '\n'))
 
-curryAbst :: Atom -> [Atom] -> Atom
+curryAbst :: Expression -> [Expression] -> Expression
 curryAbst expr is =
   foldl (flip $ Abst . extractIdentifier) (Abst (extractIdentifier $ last is) expr) (reverse $ init is)
   where
     extractIdentifier (Identifier n) = n
 
-appl :: Parser Atom
+appl :: Parser Expression
 appl = do
   l <- list
   case l of
-    List (e1 : e2 : es) ->
-      return $ if e1 `elem` keywords
-         then List (e1 : e2 : es)
-         else foldl Appl (Appl e1 e2) es
+    List (e1 : e2 : es)
+      | e1 `elem` keywords -> fail "Not an application"
+      | otherwise -> return $ foldl Appl (Appl e1 e2) es
     _ -> fail "Not an application"
   where
-    keywords = map Identifier ["if", "import"]
+    keywords = map Identifier ["lambda", "λ", "import", "define", "define-rec"]
 
-abst :: Parser Atom
+abst :: Parser Expression
 abst = do
   l <- list
   case l of
-    List [Identifier "lambda", List is, expr] ->
-      return $ curryAbst expr is
-    List [Identifier "λ", List is, expr] ->
-      return $ curryAbst expr is
+    List [Identifier "lambda", List is, value] ->
+      return $ curryAbst value is
+    List [Identifier "λ", List is, value] ->
+      return $ curryAbst value is
     _ -> fail "Not an abstraction"
 
-lets :: Parser Atom
+lets :: Parser Expression
 lets = do
   char '(' >> string "let" >> spaces >> char '('
   ((nm, val):bs) <- flip sepBy spaces $ do
     char '('
     (Identifier name) <- identifier
     spaces
-    value <- atom
+    value <- expr
     char ')'
     return (name, value)
   char ')' >> spaces
-  expr <- atom
+  value <- expr
   char ')'
-  return $ foldl (\a (nm, val) -> Let nm val a) (Let nm val expr) bs
+  return $ foldl (\a (nm, val) -> Let nm val a) (Let nm val value) bs
 
-define :: Parser Atom
+define :: Parser Statement
 define = do
   char '('
   f <- try (string "define-rec") <|> string "define" 
@@ -126,31 +166,53 @@ define = do
       ((Identifier name) : is) <- identifier `sepBy` spaces
       char ')'
       spaces
-      expr <- atom
+      expr <- expr
       return $ Define rec name $ curryAbst expr is
     defvar rec = do
       (Identifier name) <- identifier
       spaces
-      expr <- atom
+      expr <- expr
       return $ Define rec name expr
 
-atom :: Parser Atom
-atom = integer
+imports :: Parser Statement
+imports = do
+  try import_path <|> import_as
+  where
+    import_path = do
+      char '(' >> string "import" >> spaces
+      (StringLiteral path) <- stringLiteral
+      char ')'
+      return $ Import "" path
+    import_as = do
+      char '(' *> string "import-as" *> spaces
+      (Identifier name) <- identifier <* spaces
+      (StringLiteral path) <- stringLiteral <* char ')'
+      return $ Import name path
+ifs :: Parser Expression
+ifs = do
+  char '(' >> string "if" >> spaces
+  cond <- expr
+  spaces
+  thens <- expr
+  spaces
+  elses <- expr
+  char ')'
+  return $ If cond thens elses
+
+expr :: Parser Expression
+expr = integer
     <|> stringLiteral
     <|> identifier
     <|> quote
-    <|> try define
+    <|> try ifs
     <|> try abst
     <|> try lets
     <|> try appl
     <|> list
     <|> comment
 
-file :: Parser [Atom]
-file = atom `endBy` (spaces <|> eof)
+stmt :: Parser Statement
+stmt = try define <|> imports
 
-filterComments :: [Atom] -> [Atom]
-filterComments = filter (not . isComment)
-  where
-    isComment (Comment _) = True
-    isComment _           = False
+file :: Parser [Statement]
+file = stmt `endBy` (spaces <|> eof)

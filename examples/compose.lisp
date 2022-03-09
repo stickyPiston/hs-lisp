@@ -5,22 +5,21 @@
 (define pipe (foldl ∘ id))
 (define ->> pipe)
 
-(printₙ '("->> & ∘ test:" ((->> '((+ 1) (+ 3) (- _ 4) (* 2))) 10) ""))
-
 (define ¬₂ (∘ (∘ ¬)))
 (define ≤ (¬₂ >))
 (define (≥ α β) (∨ (> α β) (= α β)))
 (define ≠ (¬₂ =))
 (define (< α β) (∧ (≤ α β) (≠ α β)))
 
-(print ">, <, ≤, ≥ test:")
-(print (> 10 20))
-(print (< 10 20))
-(print (≥ 10 20))
-(print (≤ 30 20))
-(print "")
+(define naive-join (∘ (foldl ++ "") reverse))
 
-(printₙ '("I/O test:" "Type 11 characters"))
-(write (++ "\n" (++ (read 11 stdin) "\n")) stderr)
-(->> '((open 'write) (write "Hello\n") close) "output.txt")
-(write "Wrote to output.txt\n" stdout)
+(define n→s num->string)
+(define (flip f x y) (f y x))
+(define (main args) (foldl (flip write) stdout
+  (reverse '("hs-lisp test script (incomplete edition™)\n\n"
+             "Arithmetic test:\n"
+             "10 + 20 = " (n→s (+ 10 20)) "\n"
+             "60 / 3 = " (n→s (/ 60 3)) "\n"
+             "Args test: \n" (naive-join args) "\n"
+             "->> & _ test:\n((->> (* 2) (- _ 5) (/ _ 3)) 10) = "
+             (n→s ((->> '((* 2) (- _ 5) (/ _ 3))) 10)) "\n"))))
