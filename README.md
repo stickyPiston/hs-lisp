@@ -22,7 +22,7 @@ This lisp has
     (f (foldl f s (cdr l)) (car l))))
 (define (∘ f g) (λ (x) (f (g x))))
 (define ->> (foldl ∘ (λ (x) x)))
-(print ((->> '((+ 1) (+ 3) (- _ 4) (* 2))) 10))
+(define (main args) (print ((->> '((+ 1) (+ 3) (- _ 4) (* 2))) 10)))
 ; prints 20
 ```
 
