@@ -47,7 +47,7 @@
 (define to-string →s)
 
 (define (flip f x y) (f y x))
-(define (main args) (foldl (flip write) stdout
+(define (main args) (foldl (flip write) stdout 
   (reverse '("hs-lisp test script (incomplete edition™)\n\n"
              "Arithmetic test:\n"
              "10 + 20 = " (→s (+ 10 20)) "\n"
@@ -57,4 +57,6 @@
              "->> & _ test:\n((->> (* 2) (- _ 5) (/ _ 3)) 10) = "
              (→s ((->> '((* 2) (- _ 5) (/ _ 3))) 10)) "\n"
              "→s test: " (→s '(1 2 3)) " " (→s 'symbol)
-             " " (→s stdout) "\n"))))
+             " " (→s stdout) "\n"
+             "Another _ test: ((_ 10) (+ 5)) = " (→s ((_ 10) (+ 5))) "\n"
+             "_ param test: " ((λ (_) "works") 10) "\n"))))

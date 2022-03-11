@@ -44,22 +44,6 @@ instance Show Statement where
   show (Import "" path) = "(import " ++ path ++ ")"
   show (Import as path) = "(import-as " ++ as ++ " " ++ path ++ ")"
 
-{-
-data Atom
-  = Number Int
-  | Identifier String
-  | StringLiteral String
-  | List [Atom]
-  | Quote Atom
-  | Bool Bool
-  | Wildcard
-  | Comment String
-  | Abst String Atom
-  | Appl Atom Atom
-  | Let String Atom Atom
-  | Define Bool String Atom
-  deriving Eq-}
-
 spaces :: Parser ()
 spaces = skipMany1 space
 
@@ -114,6 +98,7 @@ curryAbst expr is =
   foldl (flip $ Abst . extractIdentifier) (Abst (extractIdentifier $ last is) expr) (reverse $ init is)
   where
     extractIdentifier (Identifier n) = n
+    extractIdentifier Wildcard = "_"
 
 appl :: Parser Expression
 appl = do

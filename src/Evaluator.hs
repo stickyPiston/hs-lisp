@@ -7,6 +7,7 @@ import Data.Map.Strict hiding (foldl, filter, map)
 import Control.Monad.Trans.Except
 import Control.Monad.IO.Class (liftIO)
 import Text.ParserCombinators.Parsec (parse)
+import Data.Bool (bool)
 
 import StandardContext
 import Parser
@@ -66,7 +67,9 @@ eval s a = case a of
     (_, rf) <- eval s f
     (_, ra) <- eval s a
     case rf of
-      (Lambda c p b) -> (,) s . snd <$> eval (singleton p ra <> c <> s) b
+      (Lambda c p b) ->
+        let s' = (bool (singleton p ra) empty $ p == "_") <> c <> s
+         in (,) s . snd <$> eval s' b
       (Intrinsic i) -> (,) s <$> i [ra]
       v -> throwE $ "Called " ++ show (Appl f a) ++ ", but it is not a function"
 
