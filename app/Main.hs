@@ -22,7 +22,7 @@ main = do
       s <- foldl' (\s' a -> do
           s <- s'
           v <- runExceptT $ evalTopLevel s a
-          either ((>> pure empty) . putStrLn <$> ("\nRuntime Error: " ++))
+          either ((>> s') . (>> print s) . putStrLn <$> ("\nRuntime Error: " ++))
             (return . fst) v
          ) (pure standardContext) as
       (runExceptT $ eval s (Appl (Identifier "main") $ Quote $ List $ map StringLiteral args)) >>= either (putStrLn . ("ERROR: " ++)) (const $ pure ())

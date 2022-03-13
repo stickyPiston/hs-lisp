@@ -25,12 +25,13 @@ evalTopLevel s a = case a of
         (_, v) <- eval s expr
         return (alter (maybe (Just v) =<< const) name s, nil)
 
-  Import as path -> do
+  Import name path -> do
     ((prependedStdlib ++) -> source) <- liftIO $ readFile path
     case parse file path source of
       Right as ->
         foldl (\c a -> fst <$> (flip evalTopLevel a =<< c))
-          (pure standardContext) as >>= return . flip (,) nil . (s <>)
+          (pure standardContext) as >>=
+            return . flip (,) nil . (s <>) . mapKeys ((name ++ ":") ++)
       Left e -> throwE $ show e
 
 eval :: Context -> Expression -> Result

@@ -1,54 +1,54 @@
-(import "examples/test.lisp")
+(import-as lib "examples/test.lisp")
 
 (define (compose f g x) (f (g x)))
 (define ∘ compose)
-(define pipe (foldl ∘ id))
+(define pipe (lib:foldl ∘ lib:id))
 (define ->> pipe)
 
-(define ¬₂ (∘ (∘ ¬)))
+(define ¬₂ (∘ (∘ lib:¬)))
 (define ≤ (¬₂ >))
 (define (≥ α β) (∨ (> α β) (= α β)))
 (define ≠ (¬₂ =))
 (define (< α β) (∧ (≤ α β) (≠ α β)))
 
-(define naive-join (∘ (foldl ++ "") reverse))
+(define naive-join (∘ (lib:foldl lib:++ "") lib:reverse))
 (define (join-with c l)
-  (if (∅? l) ""
+  (if (lib:∅? l) ""
     ((->> '(cdr
-            reverse
-            (foldl (λ (ac) (λ (s) (++ ac (++ c s)))) "")
-            (++ (car l)))) l)))
+            lib:reverse
+            (lib:foldl (λ (ac) (λ (s) (lib:++ ac (lib:++ c s)))) "")
+            (lib:++ (car l)))) l)))
 (define ←ascii from-ascii)
 (define →ascii to-ascii)
 
 (define-rec (n→s n)
-  (if (zero? n) ∅
-    (++ (n→s (/ n 10)) (←ascii (+ (% n 10) 48)))))
+  (if (lib:zero? n) lib:∅
+    (lib:++ (n→s (/ n 10)) (←ascii (+ (% n 10) 48)))))
 
 (define (bool-e t e b) (if b t e))
 (define b→s (bool-e "#t" "#f"))
 
-(define all (foldl ∧ #t))
-(define (all-p p xs) (all (map p xs)))
+(define all (lib:foldl lib:∧ #t))
+(define (all-p p xs) (all (lib:map p xs)))
 (define (l→s l)
   (if (all-p (∘ (= 'char) typeof) l) l
-    (++ (++ "(" (join-with ", " (map →s l))) ")")))
+    (lib:++ (lib:++ "(" (join-with ", " (lib:map →s l))) ")")))
 
 (define (→s t)
   (let ((ty (typeof t)))
     (if (= ty 'number) (n→s t)
     (if (= ty 'list) (l→s t)
     (if (= ty 'boolean) (b→s t)
-    (if (= ty 'symbol) (++ "'" (sym->s t))
-    (if (= ty 'char) (++ "'" (++ '(t) "'"))
+    (if (= ty 'symbol) (lib:++ "'" (sym->s t))
+    (if (= ty 'char) (lib:++ "'" (lib:++ '(t) "'"))
     (if (= ty 'lambda) "(lambda)"
     (if (= ty 'intrinsic) "(intrinsic)"
-    (if (= ty 'handle) "(handle)" ∅))))))))))
+    (if (= ty 'handle) "(handle)" lib:∅))))))))))
 (define to-string →s)
 
 (define (flip f x y) (f y x))
-(define (main args) (foldl (flip write) stdout 
-  (reverse '("hs-lisp test script (incomplete edition™)\n\n"
+(define (main args) (lib:foldl (flip write) stdout 
+  (lib:reverse '("hs-lisp test script (incomplete edition™)\n\n"
              "Arithmetic test:\n"
              "10 + 20 = " (→s (+ 10 20)) "\n"
              "60 / 3 = " (→s (/ 60 3)) "\n"

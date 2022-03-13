@@ -37,6 +37,7 @@ instance Show Expression where
   show (Abst p b) = "(λ (" ++ p ++ ") " ++ show b ++ ")" 
   show (Appl f a) = "(" ++ show f ++ " " ++ show a ++ ")"
   show (If c t e) = "(if " ++ show c ++ " " ++ show t ++ " " ++ show e ++ ")"
+  show (Let nm e1 e2) = "(let ((" ++ nm ++ " " ++ show e1 ++ "))" ++ " " ++ show e1 ++ ")"
 
 instance Show Statement where
   show (Define False n t) = "(define " ++ n ++ " " ++ show t ++ ")"  
@@ -173,6 +174,7 @@ imports = do
       (Identifier name) <- identifier <* spaces
       (StringLiteral path) <- stringLiteral <* char ')'
       return $ Import name path
+
 ifs :: Parser Expression
 ifs = do
   char '(' >> string "if" >> spaces
