@@ -63,7 +63,7 @@ instance Typeof Expression where
 
 instance Typeof Statement where
   typeof (Define _ _ _) = "Definition"
-  typeof (Import _ _) = "Import"
+  typeof (Import _ _ _) = "Import"
 
 instance Typeof Value where
   typeof (Value.Number _) = "number"

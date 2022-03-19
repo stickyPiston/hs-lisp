@@ -6,7 +6,7 @@ import Text.ParserCombinators.Parsec hiding (spaces)
 import Text.Parsec.Prim hiding (try)
 
 data Statement
-  = Import String String
+  = Import [String] String String
   | Define Bool String Expression
   deriving Eq
 
@@ -42,8 +42,10 @@ instance Show Expression where
 instance Show Statement where
   show (Define False n t) = "(define " ++ n ++ " " ++ show t ++ ")"  
   show (Define True n t) = "(define-rec " ++ n ++ " " ++ show t ++ ")"  
-  show (Import "" path) = "(import " ++ path ++ ")"
-  show (Import as path) = "(import-as " ++ as ++ " " ++ path ++ ")"
+  show (Import [] "" path) = "(import-all " ++ path ++ ")"
+  show (Import [] as path) = "(import-all-as " ++ as ++ " " ++ path ++ ")"
+  show (Import vars "" path) = "(import (" ++ unwords vars ++ ") " ++ path ++ ")"
+  show (Import vars as path) = "(import-some-as (" ++ unwords vars ++ ") " ++ as ++ " " ++ path ++ ")"
 
 spaces :: Parser ()
 spaces = skipMany1 space
@@ -78,12 +80,12 @@ identifier = do
   first <- symbol
   rest <- many (symbol <|> char '\'' <|> digit)
   let atom = first : rest
-   in return $
-      case atom of
-        "#f" -> Bool False
-        "#t" -> Bool True
-        "_" -> Wildcard
-        _ -> Identifier atom
+   in case atom of
+        "#f" -> return $ Bool False
+        "#t" -> return $ Bool True
+        "_" -> return $ Wildcard
+        '$' : _ -> fail "Reserved identifier"
+        _ -> return $ Identifier atom
 
 list :: Parser Expression
 list = List <$> (char '(' *> expr `sepBy` spaces <* char ')')
@@ -150,40 +152,46 @@ define = do
     defunc rec = do
       char '('
       ((Identifier name) : is) <- identifier `sepBy` spaces
-      char ')'
-      spaces
+      char ')' >> spaces
       expr <- expr
       return $ Define rec name $ curryAbst expr is
     defvar rec = do
-      (Identifier name) <- identifier
-      spaces
+      (Identifier name) <- identifier <* spaces
       expr <- expr
       return $ Define rec name expr
 
 imports :: Parser Statement
 imports = do
-  try import_path <|> import_as
+  try import_all <|> try import_as <|> try import_some <|> import_some_as
   where
-    import_path = do
-      char '(' >> string "import" >> spaces
-      (StringLiteral path) <- stringLiteral
-      char ')'
-      return $ Import "" path
+    import_all = do
+      string "(import-all" >> spaces
+      (StringLiteral path) <- stringLiteral <* char ')'
+      return $ Import [] "" path
     import_as = do
-      char '(' *> string "import-as" *> spaces
+      string "(import-all-as" >> spaces
       (Identifier name) <- identifier <* spaces
       (StringLiteral path) <- stringLiteral <* char ')'
-      return $ Import name path
+      return $ Import [] name path
+    import_some = do
+      string "(import" >> spaces
+      vars <- to_strings <$> list <* spaces
+      (StringLiteral path) <- stringLiteral <* char ')'
+      return $ Import vars "" path
+    import_some_as = do
+      string "(import-some-as" >> spaces
+      vars <- to_strings <$> list <* spaces
+      (Identifier name) <- identifier <* spaces
+      (StringLiteral path) <- stringLiteral <* char ')'
+      return $ Import vars name path
+    to_strings (List xs) = map (\(Identifier x) -> x) xs
 
 ifs :: Parser Expression
 ifs = do
   char '(' >> string "if" >> spaces
-  cond <- expr
-  spaces
-  thens <- expr
-  spaces
-  elses <- expr
-  char ')'
+  cond <- expr <* spaces
+  thens <- expr <* spaces
+  elses <- expr <* char ')'
   return $ If cond thens elses
 
 expr :: Parser Expression

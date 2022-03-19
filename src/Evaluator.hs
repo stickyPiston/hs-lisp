@@ -4,6 +4,7 @@ module Evaluator where
 
 import Prelude hiding (lookup)
 import Data.Map.Strict hiding (foldl, filter, map)
+import qualified Data.Set as S 
 import Control.Monad.Trans.Except
 import Control.Monad.IO.Class (liftIO)
 import Text.ParserCombinators.Parsec (parse)
@@ -13,7 +14,7 @@ import StandardContext
 import Parser
 import Value
 
-evalTopLevel :: Context -> Statement -> Result
+evalTopLevel :: Context -> Statement -> ExceptT String IO Context
 evalTopLevel s a = case a of
   Define rec name expr ->
     if rec
@@ -23,15 +24,16 @@ evalTopLevel s a = case a of
             Abst name expr
        else do
         (_, v) <- eval s expr
-        return (alter (maybe (Just v) =<< const) name s, nil)
+        return $ alter (maybe (Just v) =<< const) name s
 
-  Import name path -> do
+  Import vars name path -> do
     ((prependedStdlib ++) -> source) <- liftIO $ readFile path
     case parse file path source of
       Right as ->
-        foldl (\c a -> fst <$> (flip evalTopLevel a =<< c))
-          (pure standardContext) as >>=
-            return . flip (,) nil . (s <>) . mapKeys ((name ++ ":") ++)
+        foldl (\c a -> flip evalTopLevel a =<< c)
+                  (pure standardContext) as >>=
+          return . (s <>) . mapKeys ((name ++ bool ":" "" (name == "")) ++) .
+            bool (flip restrictKeys (S.fromList vars)) id (length vars == 0)
       Left e -> throwE $ show e
 
 eval :: Context -> Expression -> Result

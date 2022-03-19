@@ -1,4 +1,4 @@
-(import-as lib "examples/test.lisp")
+(import-some-as (∧ ∨ ¬ ∅ ∅? id foldl reverse ++ map) lib "examples/test.lisp")
 
 (define (compose f g x) (f (g x)))
 (define ∘ compose)
@@ -7,9 +7,9 @@
 
 (define ¬₂ (∘ (∘ lib:¬)))
 (define ≤ (¬₂ >))
-(define (≥ α β) (∨ (> α β) (= α β)))
+(define (≥ α β) (lib:∨ (> α β) (= α β)))
 (define ≠ (¬₂ =))
-(define (< α β) (∧ (≤ α β) (≠ α β)))
+(define (< α β) (lib:∧ (≤ α β) (≠ α β)))
 
 (define naive-join (∘ (lib:foldl lib:++ "") lib:reverse))
 (define (join-with c l)
@@ -22,7 +22,7 @@
 (define →ascii to-ascii)
 
 (define-rec (n→s n)
-  (if (lib:zero? n) lib:∅
+  (if (= 0 n) lib:∅
     (lib:++ (n→s (/ n 10)) (←ascii (+ (% n 10) 48)))))
 
 (define (bool-e t e b) (if b t e))

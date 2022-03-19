@@ -130,8 +130,4 @@
 (define keys (map fst))
 (define values (map snd))
 
-(define (const a b) a)
-(define-rec (printₙ xs)
-  (if (∅? xs) ∅
-    (printₙ (const (cdr xs)
-      (print (car xs))))))
+(define (const x _) x)
